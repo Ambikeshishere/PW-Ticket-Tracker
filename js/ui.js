@@ -206,6 +206,7 @@
     }
     if (r === 'CBA') items.push({ id: 'analysts', label: 'My Analysts', icon: '🧑‍🔬' });
     if (r === 'ADMIN') {
+      items.push({ id: 'analysts', label: 'Analysts', icon: '🧑‍🔬' });
       items.push({ id: 'users', label: 'Users', icon: '👥' });
       items.push({ id: 'clusters', label: 'Clusters', icon: '🧩' });
       items.push({ id: 'activity', label: 'Activity', icon: '📊' });
@@ -475,9 +476,17 @@
   /* ------------------------------ users ------------------------------ */
   /* --------------------------- my analysts --------------------------- */
   function renderAnalysts() {
-    call('clusterAnalysts', {}).then(function (list) {
+    var isAdmin = state.user.role === 'ADMIN';
+    var jobs = [call('clusterAnalysts', {})];
+    if (isAdmin) jobs.push(call('adminClusters', {}));
+    Promise.all(jobs).then(function (res) {
+      var list = res[0];
+      var clusters = res[1] || [];
+      var clusterName = {};
+      clusters.forEach(function (c) { clusterName[c.clusterId] = c.name; });
       var rows = list.map(function (a) {
         return '<tr><td><b>' + h(a.name) + '</b><div class="muted" style="font-size:12px">' + h(a.email) + '</div></td>' +
+          (isAdmin ? '<td>' + h(clusterName[a.clusterId] || a.clusterId || '—') + '</td>' : '') +
           '<td>' + h(a.department || '—') + '</td><td>' + h(a.phone || '—') + '</td>' +
           '<td class="muted" style="font-size:12px">' + fmt(a.lastLoginAt) + '</td>' +
           '<td>' + (a.status === 'ACTIVE' ? '<span class="badge ap-APPROVED">Active</span>' : '<span class="badge ap-REJECTED">Inactive</span>') + '</td>' +
@@ -485,22 +494,22 @@
           (a.status === 'ACTIVE' ? ' <button class="btn small danger" data-remove="' + h(a.email) + '">Remove</button>' : '') + '</td></tr>';
       }).join('');
       $('content').innerHTML =
-        '<div class="page-head"><h2>My Analysts</h2><button class="btn primary" id="btnAddAnalyst">＋ Add analyst</button></div>' +
-        '<p class="muted" style="margin:-6px 0 14px">Analysts in your cluster. Add someone new, or remove an analyst who has left.</p>' +
+        '<div class="page-head"><h2>' + (isAdmin ? 'Analysts' : 'My Analysts') + '</h2><button class="btn primary" id="btnAddAnalyst">＋ Add analyst</button></div>' +
+        '<p class="muted" style="margin:-6px 0 14px">' + (isAdmin ? 'All analysts across every cluster.' : 'Analysts in your cluster.') + ' Add someone new, or remove an analyst who has left.</p>' +
         '<div class="card"><div class="table-wrap">' +
-          (list.length ? '<table class="tbl"><thead><tr><th>Name</th><th>Department</th><th>Phone</th><th>Last login</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' : '<div class="empty">No analysts yet. Add your first one.</div>') +
+          (list.length ? '<table class="tbl"><thead><tr><th>Name</th>' + (isAdmin ? '<th>Cluster</th>' : '') + '<th>Department</th><th>Phone</th><th>Last login</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' : '<div class="empty">No analysts yet. Add your first one.</div>') +
         '</div></div>';
-      $('btnAddAnalyst').onclick = function () { analystModal(null); };
+      $('btnAddAnalyst').onclick = function () { analystModal(null, clusters); };
       Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function (b) {
         b.onclick = function () {
           var e = b.getAttribute('data-edit');
-          analystModal(list.filter(function (x) { return x.email === e; })[0]);
+          analystModal(list.filter(function (x) { return x.email === e; })[0], clusters);
         };
       });
       Array.prototype.forEach.call(document.querySelectorAll('[data-remove]'), function (b) {
         b.onclick = function () {
           var e = b.getAttribute('data-remove');
-          if (!window.confirm('Remove ' + e + ' from your cluster? They will no longer be able to log in.')) return;
+          if (!window.confirm('Remove ' + e + '? They will no longer be able to log in.')) return;
           call('removeAnalyst', { email: e })
             .then(function () { toast('Analyst removed', 'ok'); renderAnalysts(); })
             .catch(function (err) { toast(err.message, 'err'); });
@@ -508,23 +517,34 @@
       });
     }).catch(function (e) { $('content').innerHTML = '<div class="empty">' + h(e.message) + '</div>'; });
   }
-  function analystModal(a) {
-    a = a || { email: '', name: '', phone: '', department: '', status: 'ACTIVE' };
+  function analystModal(a, clusters) {
+    a = a || { email: '', name: '', phone: '', department: '', status: 'ACTIVE', clusterId: '' };
+    clusters = clusters || [];
+    var isAdmin = state.user.role === 'ADMIN';
+    var clusterField = (isAdmin && clusters.length)
+      ? '<div class="field"><label>Cluster</label><select id="aCluster">' +
+          clusters.map(function (c) {
+            return '<option value="' + h(c.clusterId) + '"' + (a.clusterId === c.clusterId ? ' selected' : '') + '>' + h(c.name) + '</option>';
+          }).join('') + '</select></div>'
+      : '';
     openModal(a.email ? 'Edit analyst' : 'Add analyst', '' +
       '<div class="grid2"><div class="field"><label>Name</label><input id="aName" value="' + h(a.name) + '"></div>' +
       '<div class="field"><label>Email</label><input id="aEmail" value="' + h(a.email) + '"' + (a.email ? ' disabled' : '') + ' placeholder="analyst@pw.live"></div></div>' +
       '<div class="grid2"><div class="field"><label>Phone</label><input id="aPhone" value="' + h(a.phone) + '"></div>' +
       '<div class="field"><label>Department</label><input id="aDept" value="' + h(a.department) + '"></div></div>' +
+      clusterField +
       '<div class="field"><label>Status</label><select id="aStatus">' +
         ['ACTIVE','INACTIVE'].map(function (s) { return '<option' + (a.status === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') +
       '</select></div>' +
       '<p class="muted" style="font-size:12px">They sign in with an email OTP — no password needed.</p>',
       '<button class="btn" data-close-modal>Cancel</button><button class="btn primary" id="aSave">Save</button>');
     $('aSave').onclick = function () {
-      call('saveAnalyst', { analyst: {
+      var payload = {
         email: $('aEmail').value, name: $('aName').value, phone: $('aPhone').value,
         department: $('aDept').value, status: $('aStatus').value
-      } }).then(function () { closeModal(); toast('Analyst saved', 'ok'); renderAnalysts(); })
+      };
+      if (isAdmin && $('aCluster')) payload.clusterId = $('aCluster').value;
+      call('saveAnalyst', { analyst: payload }).then(function () { closeModal(); toast('Analyst saved', 'ok'); renderAnalysts(); })
         .catch(function (e) { toast(e.message, 'err'); });
     };
   }
