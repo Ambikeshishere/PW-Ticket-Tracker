@@ -5,6 +5,6 @@
    portal at your backend.
    ============================================================ */
 window.PW_CONFIG = {
-  // e.g. 'https://script.google.com/macros/s/AKfy.../exec'
-  API_URL: ''
+  // Deployed Apps Script Web App (JSON API) endpoint:
+  API_URL: 'https://script.google.com/macros/s/AKfycbwy4QQv3e52ga3CgR8PaT6euJcZLWVsD3WgZaDBlTGd0JwDs9dTqJvAXAHBfEulO183cw/exec'
 };

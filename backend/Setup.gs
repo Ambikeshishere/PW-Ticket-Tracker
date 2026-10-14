@@ -94,6 +94,29 @@ function setup() {
   return true;
 }
 
+/**
+ * Run this ONCE from the Apps Script editor right after deploying (or any time
+ * `appsscript.json` scopes change). It touches every Google service the portal
+ * needs so Google grants the full scope set, then returns without side effects.
+ * Safe to run repeatedly — it never writes data.
+ *
+ * Why: a Web App keeps running with the OAuth grant that existed when it was
+ * authorized. If the manifest's `oauthScopes` later grows (e.g. we moved from a
+ * bound Sheet to a standalone one and widened to full `spreadsheets`), the old
+ * grant no longer covers the new scope and every call fails with
+ * "You do not have permission to call SpreadsheetApp.openById". Running this
+ * function re-triggers the consent screen and refreshes the grant.
+ */
+function authorize() {
+  var id = Db.ss().getId();                       // https://www.googleapis.com/auth/spreadsheets
+  var quota = MailApp.getRemainingDailyQuota();   // https://www.googleapis.com/auth/script.send_mail
+  var triggers = ScriptApp.getProjectTriggers().length; // script.scriptapp
+  var msg = 'Portal authorized. Spreadsheet: ' + id + ' | mail quota: ' + quota +
+    ' | triggers: ' + triggers;
+  Logger.log(msg);
+  return msg;
+}
+
 /** Writes any missing Config defaults (never overwrites existing keys). */
 function seedConfig_() {
   var existing = {};

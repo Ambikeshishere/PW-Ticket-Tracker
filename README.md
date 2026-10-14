@@ -1,49 +1,64 @@
 # PW Analytics Ticket Portal
 
-A ticket / request tracking portal for the PW Analytics team, built entirely on
-**Google Apps Script + Google Sheets + HtmlService**. No external server, no
-database — the bound Google Sheet *is* the database, and the Apps Script web app
-*is* the backend.
+A ticket / request tracking portal for the PW Analytics team.
 
-> **Hinglish quick summary:** Ye ek single Google Sheet + Apps Script web app hai.
-> Sheet ke 11 tabs database ka kaam karte hain. `Code.gs` ek hi API router hai
-> (`api(name, token, payload)`). Login email-OTP se hota hai, session token hash
-> banake `Sessions` tab me store hota hai. Roles: USER / CBA / ANALYST / ADMIN.
-> Ticket raise → CBA assign karta hai → ANALYST kaam karta hai → USER close karta
-> hai. External approval email link se, reassignment CBA approval se. Sab kuch
-> `README` ke neeche detail me likha hai.
+- **Front-end** — a plain static site (HTML + CSS + vanilla JS) at the repo root.
+  Host it anywhere (GitHub Pages, S3, `python3 -m http.server`). No build step.
+- **Back-end** — a Google Apps Script **JSON API** in `backend/`, deployed as a
+  Web App and backed by a Google Sheet (the Sheet *is* the database).
+- **No demo mode** — login is real email OTP; nothing is faked in the UI.
+
+> **Hinglish quick summary:** Front-end repo root me hai (`index.html`, `styles.css`,
+> `js/`). Back-end `backend/` me hai — ek Apps Script Web App jo JSON API deta hai
+> (`{api, token, payload}` → `{ok, data|error}`). Sheet ke 11 tabs database hain.
+> Login email-OTP se, session token hash banake `Sessions` tab me. Roles:
+> USER / CBA / ANALYST / ADMIN. Ticket raise → CBA assign → ANALYST kaam → USER
+> close. External approval email link se, reassignment CBA approval se.
 
 ---
 
-## 1. File map (what each file does)
+## 1. File map
 
-| File | Type | Responsibility |
-|------|------|----------------|
-| `Code.gs` | Server | Web-app entry (`doGet`), `include()`, the **single API router** `api()`, `PUBLIC_API` / `PRIVATE_API` maps, sheet menu (`onOpen`). |
-| `Config.gs` | Server | Sheet names (`SHEETS`), roles, statuses, priorities, `DEFAULT_CONFIG`, `cfg()` / `cfgNum()` / `setCfg()`, `slaDueDate()`. |
-| `Db.gs` | Server | The **only** code that touches the Sheet (`Db` object) + shared helpers (`withLock`, `now`, `addHours`, `toMs`, `sha256`, `randomToken`, `randomOtp`, `normEmail`, `escHtml`, `webAppUrl`, `logErr`). |
-| `Setup.gs` | Server | One-time provisioning: `HEADERS`, `setup()`, `seedConfig_()`, `seedAdmin_()`. |
-| `Auth.gs` | Server | `Auth` object: signup, OTP request/verify, sessions, `requireSession`, `logout`, `publicUser`, `logActivity`. |
-| `Tickets.gs` | Server | `Tickets` object: visibility, create, list, get, assign, status flow, close/reopen/rate, comments, dashboard. |
-| `Approvals.gs` | Server | `Approvals` object: external email approval request, public `getInfo`, public `decide`, token lookup. |
-| `Reassign.gs` | Server | `Reassign` object: analyst→analyst reassignment request, list, CBA/admin decision. |
-| `Admin.gs` | Server | `Admin` object: public clusters, team workload, user/cluster CRUD, analytics, activity ranking, CSV export. |
-| `Triggers.gs` | Server | Time-driven jobs: `setupTriggers()`, `dailyReminders()`, `hourlySlaCheck()`, `cleanupExpired()`. |
-| `Mail.gs` | Server | All outbound email (`sendMail`, `shell`, `kvTable`, `button`, and every workflow mail). |
-| `index.html` | Client | The SPA shell: auth screen, app shell, approval screen, drawer/modal/toast containers, `APPROVAL` globals. |
-| `styles.html` | Client | All CSS (light + dark theme via CSS variables). |
-| `app.js.html` | Client | The whole client app: API bridge, auth wiring, role-based nav, every view, ticket drawer, modals, approval page. |
-| `appsscript.json` | Manifest | Timezone, V8 runtime, OAuth scopes, web-app access. |
+### Front-end (repo root — deploy this to GitHub Pages)
 
-**Load order note:** `index.html` pulls in the other two with `<?!= include('styles') ?>`
-and `<?!= include('app.js') ?>`. In the Apps Script editor the HTML files are named
-`styles` and `app.js` (the `.html` suffix is added by the editor).
+| File | Responsibility |
+|------|----------------|
+| `index.html` | The SPA shell: auth screen, app shell, approval screen, drawer/modal/toast containers. Loads `js/config.js` first. |
+| `styles.css` | All CSS (light + dark theme via CSS variables). |
+| `js/config.js` | **The only file you edit to point the portal at your backend.** Sets `window.PW_CONFIG.API_URL`. |
+| `js/api.js` | Network client. `API.call(name, payload)` → POSTs JSON to `API_URL` (as `text/plain`), falls back to JSONP GET. Holds the session token. |
+| `js/ui.js` | The whole UI: auth wiring, role-based nav, every view, ticket drawer, modals, approval page. |
+| `js/api.local.js` | A localStorage-backed implementation of the same `API.call` surface — kept as an offline reference / used by `dev/web-test.js`. **Not loaded by `index.html`.** |
+| `js/store.js` | Legacy localStorage DB + seed (pre-API prototype). **Not loaded by `index.html`.** |
+
+### Back-end (`backend/` — deploy with `clasp`)
+
+| File | Responsibility |
+|------|----------------|
+| `Api.gs` | Web-app entry points (`doGet`/`doPost`), the **JSON router** `handle()`, `PUBLIC_API` / `PRIVATE_API` maps, `api()` wrapper, `ensureSetup_()` lazy bootstrap, `clean_()`, sheet menu. |
+| `Config.gs` | `SHEET_ID`, `PORTAL_URL`, sheet names (`SHEETS`), roles, statuses, priorities, `DEFAULT_CONFIG`, `cfg()` / `cfgNum()` / `setCfg()`, `slaDueDate()`. |
+| `Db.gs` | The **only** code that touches the Sheet (`Db` object) + shared helpers (`withLock`, `now`, `addHours`, `toMs`, `sha256`, `randomToken`, `randomOtp`, `normEmail`, `escHtml`, `portalUrl`, `logErr`). |
+| `Setup.gs` | One-time provisioning: `portalHeaders_()`, `setup()`, `authorize()`, `seedConfig_()`, `seedAdmin_()`. |
+| `Auth.gs` | `Auth` object: signup, OTP request/verify, sessions, `requireSession`, `logout`, `publicUser`, `logActivity`. |
+| `Tickets.gs` | `Tickets` object: visibility, create, list, get, assign, status flow, close/reopen/rate, comments, dashboard. |
+| `Approvals.gs` | `Approvals` object: external email approval request, public `getInfo`, public `decide`, token lookup. |
+| `Reassign.gs` | `Reassign` object: analyst→analyst reassignment request, list, CBA/admin decision. |
+| `Admin.gs` | `Admin` object: public clusters, team workload, user/cluster CRUD, analytics, activity ranking, CSV export. |
+| `Triggers.gs` | Time-driven jobs: `setupTriggers()`, `dailyReminders()`, `hourlySlaCheck()`, `cleanupExpired()`. |
+| `Mail.gs` | All outbound email (`sendMail`, `shell`, `kvTable`, `button`, and every workflow mail). |
+| `appsscript.json` | Manifest: timezone, V8 runtime, OAuth scopes, web-app access. |
+| `.clasp.json` | `clasp` project binding (`scriptId`). |
+
+**Load-order note:** Apps Script runs every file's top-level code in an arbitrary
+order, so all cross-file tables are built **inside functions** (e.g.
+`portalHeaders_()`, `PUBLIC_API` closures) and resolved at call time.
 
 ---
 
 ## 2. Data model — the 11 tabs
 
-Created automatically by `setup()`. Headers are defined in `Setup.gs` (`HEADERS`).
+Created automatically by `setup()` (or lazily on the first API call). Headers are
+defined in `Setup.gs` (`portalHeaders_()`).
 
 ### `Users`
 `UserID, Name, Email, Phone, Department, DefaultPriority, Role, ClusterID, ReportsTo, Status, CreatedAt, LastLoginAt`
@@ -79,11 +94,11 @@ Created automatically by `setup()`. Headers are defined in `Setup.gs` (`HEADERS`
 
 ### `OTP`
 `Email, OtpHash, ExpiresAt, Attempts, CreatedAt`
-- `OtpHash` = `sha256(code + '|' + email)`.
+- `OtpHash` = `sha256(code + '|' + email + SALT)`.
 
 ### `Sessions`
 `TokenHash, Email, Role, CreatedAt, ExpiresAt, LastSeenAt`
-- `TokenHash` = `sha256(rawToken)`.
+- `TokenHash` = `sha256(rawToken + SALT)`.
 
 ### `ActivityLog`
 `Timestamp, Email, Role, Event, Meta`
@@ -131,7 +146,7 @@ Role checks are enforced in one place: the `roles` array on each `PRIVATE_API` r
    - Rate-limited to one OTP per `OTP_RESEND_SEC` (60s) window.
    - **Email-enumeration guard:** for unknown/inactive emails it returns a generic
      success message and sends nothing.
-   - For real users: generates a 6-digit OTP, stores `sha256(otp + '|' + email)`
+   - For real users: generates a 6-digit OTP, stores `sha256(otp + '|' + email + SALT)`
      with an expiry, emails the code.
 2. `verifyOtp(email, code)`:
    - Rejects if no OTP record, if expired, or if `Attempts >= OTP_MAX_ATTEMPTS`.
@@ -140,7 +155,7 @@ Role checks are enforced in one place: the `roles` array on each `PRIVATE_API` r
      logs `LOGIN`, returns `{ token, user }`.
 
 ### Sessions
-- `createSession` stores `sha256(token)` with an expiry (`SESSION_HOURS`, default 12h).
+- `createSession` stores `sha256(token + SALT)` with an expiry (`SESSION_HOURS`, default 12h).
 - `requireSession(token)` is called by the router for every private endpoint:
   validates the hash, checks expiry, loads the user, checks `Status = ACTIVE`,
   and refreshes `LastSeenAt` at most once per `SILENT_SESSION_MIN` minutes.
@@ -152,23 +167,42 @@ with a per-deployment `SALT`.
 
 ---
 
-## 5. The API contract (`Code.gs`)
+## 5. The API contract (`Api.gs`)
 
-The client **only** ever calls:
+The front-end only ever calls one function: `API.call(name, payload)` in `js/api.js`.
 
-```js
-google.script.run.api(name, token, payload)
+### Transport
 ```
+POST  <API_URL>            body: {"api":name,"token":"..","payload":{..}}
+GET   <API_URL>?api=..&token=..&payload=<json>&callback=cb     (JSONP fallback)
+```
+- The POST body is sent as `Content-Type: text/plain;charset=utf-8` so the browser
+  treats it as a **simple request** and skips the CORS pre-flight (Apps Script
+  cannot answer `OPTIONS`).
+- The JSONP GET form is the fallback where POST is blocked.
+- Opening `API_URL` in a browser shows a small info page linking to the portal.
 
-The router returns `{ ok: true, data }` or `{ ok: false, error }`.
+### Response
+Every call returns `{ ok: true, data }` or `{ ok: false, error }`.
 
-- `PUBLIC_API` — no session needed: `signup`, `requestOtp`, `verifyOtp`,
+### Routes
+- **`PUBLIC_API`** — no session needed: `signup`, `requestOtp`, `verifyOtp`,
   `getClusters`, `getApproval`, `decideApproval`.
-- `PRIVATE_API` — each entry is `{ fn, roles }`. The router calls
-  `Auth.requireSession(token)`, checks `roles.indexOf(user.Role)`, then runs `fn(user, payload)`.
+- **`PRIVATE_API`** — each entry is `{ fn, roles }`. The router calls
+  `Auth.requireSession(token)`, checks `roles.indexOf(user.Role)`, then runs
+  `fn(user, payload)`.
 
-Every function is wrapped in a lazy closure so module objects (`const`-like `var`
-objects) resolve **at call time**, never at file-load time.
+Private routes: `logout`, `me`, `createTicket`, `listTickets`, `getTicket`,
+`addComment`, `assignTicket`, `updateStatus`, `closeTicket`, `reopenTicket`,
+`rateTicket`, `myAnalysts`, `requestApproval`, `requestReassign`, `listReassign`,
+`decideReassign`, `teamWorkload`, `adminUsers`, `adminSaveUser`, `adminClusters`,
+`adminSaveCluster`, `adminAnalytics`, `adminActivity`, `adminExportCsv`, `dashboard`.
+
+### Lazy bootstrap
+`handle()` calls `ensureSetup_()` first. On a brand-new deployment the very first
+API call runs `setup()` once (guarded by the script property `SETUP_DONE` + a
+`LockService` lock), so the Sheet is provisioned automatically — nobody has to
+open the editor just to run `setup()`.
 
 ---
 
@@ -220,10 +254,10 @@ reassignments and pending external approvals.
 1. A CBA/admin calls `requestApproval(ticketId, approverEmail, note)`.
 2. Server generates a random token, stores **only** `sha256(token)`, sets the
    ticket to `ApprovalStatus=PENDING` + `Status=PENDING_APPROVAL`, and emails the
-   approver two links: `?action=approve&t=<token>&a=<approvalId>` and the reject twin.
-3. `doGet` renders a **confirmation page** (never auto-decides on GET). The page
-   calls the public `getApproval` to show the ticket, then the approver clicks
-   Approve/Reject, which calls the public `decideApproval`.
+   approver a link: `<PORTAL_URL>#approve/<approvalId>/<token>`.
+3. The static front-end renders the **approval screen** (never auto-decides on
+   load). It calls the public `getApproval` to show the ticket, then the approver
+   clicks Approve/Reject, which calls the public `decideApproval`.
 4. `decide` validates the token hash, checks `PENDING` + not expired, records the
    decision, and moves the ticket to `IN_PROGRESS` (approved) or `ON_HOLD` (rejected).
    Approvals are **single-use** and expire after `APPROVAL_EXPIRY_HRS` (72h).
@@ -294,21 +328,59 @@ reassign request, reassign decision, SLA warning, overdue.
 
 ## 12. Setup & deployment
 
-1. Create a Google Sheet → **Extensions ▸ Apps Script**.
-2. Add all `.gs` files and the three HTML files (`index`, `styles`, `app.js`).
-   Paste `appsscript.json` via **Project Settings ▸ Show "appsscript.json"**.
-3. In the editor, run **`setup()`** once (authorize when prompted). This creates all
-   11 tabs, seeds `Config`, and creates the admin account.
-4. Run **`setupTriggers()`** once to install the time-driven jobs.
-5. **Deploy ▸ New deployment ▸ Web app**:
-   - Execute as: **Me**
-   - Who has access: **Anyone** (the app has its own OTP login)
-6. Open the web-app URL. Sign in with the admin email (`ADMIN_EMAIL`) via OTP.
-7. As admin: create **Clusters** (with a CBA email), then create **CBA** and
+### A. Back-end (Apps Script JSON API)
+
+The project is a **standalone** script (not bound to a Sheet). It creates its own
+spreadsheet on first run.
+
+1. Install `clasp` and log in (once):
+   ```bash
+   npx --yes @google/clasp login
+   ```
+2. Enable the **Apps Script API** at <https://script.google.com/home/usersettings>
+   (needed for `clasp push`).
+3. Push the backend:
+   ```bash
+   npm run push          # cd backend && clasp push -f
+   ```
+4. Deploy as a Web App (Execute as **Me**, access **Anyone**):
+   ```bash
+   cd backend && npx --yes @google/clasp deploy -d "v1 JSON API"
+   ```
+   Copy the printed deployment ID; the Web App URL is
+   `https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec`.
+5. **Authorize the scopes once.** Open the script editor
+   (`https://script.google.com/d/<SCRIPT_ID>/edit`), pick **`authorize`** in the
+   function dropdown, click **Run**, and approve the consent screen. This grants
+   `spreadsheets`, `script.send_mail`, and `script.scriptapp` in one go.
+   > If you skip this, every API call fails with *"You do not have permission to
+   > call SpreadsheetApp.openById"* — the Web App keeps running with the OAuth
+   > grant it had when it was first authorized, and the manifest's scopes changed.
+6. (Optional) Run **`setupTriggers`** once to install the time-driven jobs.
+   The Sheet itself is provisioned automatically on the first API call
+   (`ensureSetup_()`), or run **`setup`** manually to do it now.
+
+### B. Front-end (static site)
+
+1. Set the API URL in `js/config.js`:
+   ```js
+   window.PW_CONFIG = {
+     API_URL: 'https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec'
+   };
+   ```
+   (You can also override at runtime with `?api=<url>` in the page query string.)
+2. Serve the repo root — e.g. GitHub Pages, or locally:
+   ```bash
+   npm run serve         # python3 -m http.server 8080
+   ```
+3. Open the site, sign in with the admin email (`ADMIN_EMAIL`) via OTP.
+4. As admin: create **Clusters** (with a CBA email), then create **CBA** and
    **ANALYST** users and assign them to clusters.
 
 ### First-run checklist
-- [ ] `setup()` ran without errors
+- [ ] `clasp push` + `clasp deploy` succeeded
+- [ ] `authorize()` ran and the consent screen was approved
+- [ ] `js/config.js` `API_URL` points at the deployment
 - [ ] `Config` tab has a random `SALT`
 - [ ] Admin can log in via OTP
 - [ ] At least one cluster + one CBA + one analyst exist
@@ -331,26 +403,37 @@ reassign request, reassign decision, SLA warning, overdue.
 ## 14. Development & testing (offline)
 
 The `dev/` folder is a **local test harness** — it is *not* part of the deployed
-Apps Script project (don't paste it into the editor). It emulates the Apps Script
-runtime in Node so the real `.gs` logic can be exercised without deploying.
+Apps Script project (don't push it). It emulates the Apps Script runtime in Node so
+the real `.gs` logic and the static front-end can be exercised without deploying.
 
 ```bash
-npm test        # run the backend test suite (dev/run.js)
-npm run check   # client ↔ server contract check (dev/check-client.js)
-npm run verify  # both
+npm test          # static front-end test suite (dev/web-test.js)
+npm run test:api  # backend JSON API test (dev/backend-test.js)
+npm run test:gas  # Apps Script logic test (dev/run.js)
+npm run check     # front-end ↔ API contract check (dev/check-client.js)
+npm run verify    # all of the above
+npm run mock      # local mock API server on :8090 (dev/mock-server.js)
+npm run serve     # static server on :8080
 ```
 
-- `dev/mock.js` — in-memory `SpreadsheetApp`, `CacheService`, `LockService`,
-  `MailApp`, `Utilities`, `ScriptApp`, etc.
-- `dev/run.js` — loads the real `.gs` files into a `vm` context and runs the tests.
-- `dev/tests.js` — 72 assertions covering setup, signup, OTP, sessions, tickets,
-  assignment, status flow, approvals, reassignment, close/rate, analytics, and the
-  `api()` router (including role denial).
-- `dev/check-client.js` — verifies every `call('name')` in `app.js.html` has a route
-  in `Code.gs`, every `include()` target exists, and every `$('id')` resolves.
+- `dev/mock.js` — in-memory `SpreadsheetApp` (incl. `openById`/`create`/`getId`),
+  `PropertiesService`, `CacheService`, `LockService`, `MailApp`, `Utilities`,
+  `ScriptApp`, etc.
+- `dev/run.js` — loads the real `backend/*.gs` files into a `vm` context and runs
+  `dev/tests.js` (72 assertions: setup, signup, OTP, sessions, tickets, assignment,
+  status flow, approvals, reassignment, close/rate, analytics, and the `api()` router
+  including role denial).
+- `dev/backend-test.js` — drives the JSON API end-to-end (42 assertions).
+- `dev/web-test.js` — exercises the static front-end against `js/api.local.js`
+  (64 assertions).
+- `dev/check-client.js` — verifies every `call('name')` in `js/ui.js` has a route in
+  `backend/Api.gs`, and every `$('id')` referenced in `js/ui.js` exists in `index.html`.
+- `dev/mock-server.js` — a tiny HTTP server that loads `backend/*.gs` and serves the
+  JSON API on `:8090`, so you can run the real front-end against real backend logic
+  locally (point `js/config.js` at `http://localhost:8090`).
 
 > The harness is a safety net, not a substitute for a real deployment smoke test —
-> always run `setup()` and click through the web app once after deploying.
+> always run `authorize()` + `setup()` and click through the web app once after deploying.
 
 ---
 
