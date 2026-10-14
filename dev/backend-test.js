@@ -160,6 +160,16 @@ t.eq('dashboard -> ok:true', dash.ok, true);
 t.ok('dashboard has totals', !!(dash.data && typeof dash.data.total === 'number'));
 t.ok('dashboard counts the new ticket', dash.data.total >= 1);
 
+/* --------------------------- email links ----------------------------- */
+t.section('email links point at the portal');
+t.ok('portalUrl falls back to the front-end (not the API)', ctx.portalUrl().indexOf('github.io') !== -1, ctx.portalUrl());
+t.ok('ticketUrl deep-links to the ticket', /#ticket\/TKT-/.test(ctx.ticketUrl('TKT-2026-00001')), ctx.ticketUrl('TKT-2026-00001'));
+const sentMails = globals.__test.sentMails;
+const receivedMail = sentMails.filter((m) => /^\[Received\]/.test(m.subject || ''));
+t.ok('ticket-received mail was sent', receivedMail.length >= 1);
+t.ok('ticket-received mail links to the ticket', receivedMail.some((m) => /#ticket\//.test(m.htmlBody || '')));
+t.ok('no mail links to the raw API endpoint', !sentMails.some((m) => /script\.google\.com\/macros/.test(m.htmlBody || '')));
+
 /* --------------------------- CBA create + self-assign ---------------- */
 t.section('CBA create + self-assign');
 const mkCba = call('adminSaveUser', adminToken, { user: { email: 'cba@pw.live', name: 'Priya CBA', role: 'CBA', clusterId: clusterId } });

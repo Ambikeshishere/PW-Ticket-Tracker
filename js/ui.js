@@ -8,7 +8,7 @@
   var state = {
     token: null, user: null, view: 'dashboard',
     tickets: [], filters: { q: '', status: '', priority: '', page: 1, pageSize: 20 },
-    total: 0, pendingCount: 0, approval: null
+    total: 0, pendingCount: 0, approval: null, pendingTicket: null
   };
 
   /* ------------------------------ utils ------------------------------ */
@@ -65,6 +65,16 @@
     return null;
   }
 
+  /* ---------------------------- ticket url --------------------------- */
+  // Deep link from email: <portal>#ticket/<TICKET-ID>
+  function ticketFromUrl() {
+    var hash = location.hash || '';
+    var m = hash.match(/#ticket\/([^/&?]+)/);
+    if (m) return decodeURIComponent(m[1]);
+    var q = new URLSearchParams(location.search);
+    return q.get('ticket') || null;
+  }
+
   /* ------------------------------ boot ------------------------------- */
   function boot() {
     try { applyTheme(localStorage.getItem('pw_theme') || 'light'); } catch (e) { applyTheme('light'); }
@@ -72,6 +82,8 @@
 
     var ap = approvalFromUrl();
     if (ap) { state.approval = ap; showApproval(); return; }
+
+    state.pendingTicket = ticketFromUrl();
 
     var t = localStorage.getItem('pw_token');
     if (t) {
@@ -171,6 +183,12 @@
     $('btnMenu').onclick = function () { $('sidebar').classList.toggle('open'); };
     renderNav();
     setView('dashboard');
+    if (state.pendingTicket) {
+      var id = state.pendingTicket;
+      state.pendingTicket = null;
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; }
+      openTicket(id);
+    }
   }
 
   function navItems() {

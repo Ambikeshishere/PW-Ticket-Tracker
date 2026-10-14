@@ -30,6 +30,13 @@ var ADMIN_CLUSTER_ID = 'CL-ADMIN';
 var ADMIN_CLUSTER_NAME = 'Admin';
 
 /**
+ * The public URL of the static front-end (GitHub Pages). Used for the links in
+ * outgoing emails when the Config tab's PORTAL_URL is empty. Set PORTAL_URL in
+ * the Config tab to override this (e.g. a custom domain).
+ */
+var FRONTEND_URL = 'https://ambikeshishere.github.io/PW-Ticket-Tracker/';
+
+/**
  * Bump this whenever setup() gains a new idempotent seed (e.g. a new built-in
  * cluster). ensureSetup_() re-runs setup() once for existing installs whose
  * stored version is older, so new seeds reach already-provisioned Sheets.

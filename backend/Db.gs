@@ -180,12 +180,18 @@ function webAppUrl() {
 
 /**
  * The public URL of the static front-end (GitHub Pages), used in email links.
- * Falls back to this Apps Script web-app URL when PORTAL_URL is not set.
+ * Order: Config tab PORTAL_URL -> FRONTEND_URL constant -> this web-app URL.
  */
 function portalUrl() {
   var u = String(cfg('PORTAL_URL') || '').trim();
   if (u) return u.replace(/\/+$/, '');
+  if (typeof FRONTEND_URL === 'string' && FRONTEND_URL) return FRONTEND_URL.replace(/\/+$/, '');
   return webAppUrl();
+}
+
+/** Deep link straight to a ticket in the portal: <portal>#ticket/<TICKET-ID>. */
+function ticketUrl(ticketId) {
+  return portalUrl() + '#ticket/' + encodeURIComponent(String(ticketId));
 }
 
 function logErr(where, e) {

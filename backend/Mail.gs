@@ -84,7 +84,7 @@ function mailNewTicketToCba(ticket, cbaEmail) {
         ['Ticket', ticket.TicketID], ['Title', ticket.Title],
         ['Priority', ticket.Priority], ['Category', ticket.Category],
         ['Requester', ticket.RaisedByName + ' (' + ticket.RaisedByEmail + ')']
-      ]) + button('Open portal', portalUrl()))
+      ]) + button('Open ticket', ticketUrl(ticket.TicketID)))
   });
 }
 
@@ -97,7 +97,7 @@ function mailTicketCreatedToUser(ticket) {
       kvTable([
         ['Ticket', ticket.TicketID], ['Title', ticket.Title],
         ['Priority', ticket.Priority], ['Due by', fmtDate(ticket.DueAt)]
-      ]) + button('Track it', portalUrl()))
+      ]) + button('Track it', ticketUrl(ticket.TicketID)))
   });
 }
 
@@ -111,7 +111,7 @@ function mailAssignedToAnalyst(ticket, analystEmail, actorName) {
         ['Ticket', ticket.TicketID], ['Title', ticket.Title],
         ['Priority', ticket.Priority], ['Requester', ticket.RaisedByName],
         ['Due by', fmtDate(ticket.DueAt)]
-      ]) + button('Open ticket', portalUrl()))
+      ]) + button('Open ticket', ticketUrl(ticket.TicketID)))
   });
 }
 
@@ -148,7 +148,7 @@ function mailComment(ticket, actor, text) {
     htmlBody: shell('New comment on ' + ticket.TicketID,
       '<p><b>' + escHtml(actor.Name || actor.Email) + '</b> wrote:</p>' +
       '<blockquote style="border-left:3px solid #2563eb;margin:0;padding:6px 12px;color:#374151">' +
-      escHtml(text) + '</blockquote>' + button('View ticket', portalUrl()))
+      escHtml(text) + '</blockquote>' + button('View ticket', ticketUrl(ticket.TicketID)))
   });
 }
 

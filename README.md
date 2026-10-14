@@ -29,7 +29,7 @@ A ticket / request tracking portal for the PW Analytics team.
 | `styles.css` | All CSS (light + dark theme via CSS variables). Uses the **PW brand palette** — Royal Blue `#5A4BDA`, Bright Sun `#FBDE47`, Evening Sea `#024148` — and the Gilroy font. |
 | `js/config.js` | **The only file you edit to point the portal at your backend.** Sets `window.PW_CONFIG.API_URL`. |
 | `js/api.js` | Network client. `API.call(name, payload)` → POSTs JSON to `API_URL` (as `text/plain`), falls back to JSONP GET. Holds the session token. |
-| `js/ui.js` | The whole UI: auth wiring, role-based nav, every view, ticket drawer, modals, approval page. |
+| `js/ui.js` | The whole UI: auth wiring, role-based nav, every view, ticket drawer, modals, approval page. Handles the `#approve/<id>/<token>` and `#ticket/<id>` deep links. |
 | `js/api.local.js` | A localStorage-backed implementation of the same `API.call` surface — kept as an offline reference / used by `dev/web-test.js`. **Not loaded by `index.html`.** |
 | `js/store.js` | Legacy localStorage DB + seed (pre-API prototype). **Not loaded by `index.html`.** |
 
@@ -327,6 +327,7 @@ reassignments and pending external approvals.
 |-----|---------|---------|
 | `APP_NAME` | PW Analytics Ticket Portal | Shown in UI + emails |
 | `ADMIN_EMAIL` | ambikesh.srivastava@pw.live | Seeded admin + escalation target |
+| `PORTAL_URL` | *(empty)* | Public URL of the static front-end used in email links. Empty → falls back to the `FRONTEND_URL` constant in `Config.gs`. |
 | `ALLOWED_DOMAIN` | pw.live | Sign-up domain lock (`''` = any) |
 | `OTP_EXPIRY_MIN` | 5 | OTP lifetime |
 | `OTP_MAX_ATTEMPTS` | 3 | Wrong-code attempts before reset |
@@ -368,6 +369,13 @@ all user text is passed through `escHtml()`.
 Mails: OTP, welcome, new-ticket→CBA, ticket-received→requester, assigned→analyst,
 assigned→requester, status change, comment, approval request, approval decision,
 reassign request, reassign decision, SLA warning, overdue.
+
+### Links in emails
+Ticket mails link straight to the ticket: `button('Track it', ticketUrl(id))` →
+`<portal>#ticket/<TICKET-ID>`. The portal reads that hash on boot and opens the
+ticket drawer (after login, if the user isn't signed in yet). `portalUrl()` resolves
+the front-end URL as Config `PORTAL_URL` → the `FRONTEND_URL` constant in `Config.gs`
+→ the Apps Script web-app URL, so links never fall back to the raw API endpoint.
 
 ---
 
@@ -466,11 +474,12 @@ npm run serve     # static server on :8080
   `PropertiesService`, `CacheService`, `LockService`, `MailApp`, `Utilities`,
   `ScriptApp`, etc.
 - `dev/run.js` — loads the real `backend/*.gs` files into a `vm` context and runs
-  `dev/tests.js` (85 assertions: setup, signup, OTP, sessions, tickets, assignment,
+  `dev/tests.js` (87 assertions: setup, signup, OTP, sessions, tickets, assignment,
   status flow, approvals, reassignment, close/rate, analytics, and the `api()` router
   including role denial).
-- `dev/backend-test.js` — drives the JSON API end-to-end (71 assertions, incl. CBA
-  analyst management, admin cross-cluster assign, and the setup-version guard).
+- `dev/backend-test.js` — drives the JSON API end-to-end (76 assertions, incl. CBA
+  analyst management, admin cross-cluster assign, the setup-version guard, and email
+  deep links).
 - `dev/web-test.js` — exercises the static front-end against `js/api.local.js`
   (84 assertions).
 - `dev/check-client.js` — verifies every `call('name')` in `js/ui.js` has a route in

@@ -35,6 +35,8 @@ module.exports = function runTests(ctx, t) {
   ok('admin account seeded', !!rawUser(ADMIN_EMAIL));
   ok('Admin cluster seeded', !!ctx.Db.findOne(ctx.SHEETS.CLUSTERS, (c) => String(c.ClusterID) === 'CL-ADMIN'));
   eq('admin lives in the Admin cluster', String(rawUser(ADMIN_EMAIL).ClusterID), 'CL-ADMIN');
+  ok('portalUrl points at the front-end', ctx.portalUrl().indexOf('github.io') !== -1, ctx.portalUrl());
+  ok('ticketUrl deep-links to a ticket', /#ticket\/TKT-/.test(ctx.ticketUrl('TKT-1')), ctx.ticketUrl('TKT-1'));
 
   const admin = rawUser(ADMIN_EMAIL);
   admin.Role = 'ADMIN';
