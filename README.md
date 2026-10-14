@@ -395,8 +395,8 @@ all user text is passed through `escHtml()`.
 **Speed:** `MailApp.sendEmail()` costs 1–2s per message and one action can trigger
 several, so workflow mail is written to the `MailQueue` tab and sent by the
 `drainMailQueue` trigger — the request returns immediately. Login OTPs pass
-`direct: true` and send inline so they arrive at once. If the queue tab is missing,
-`sendMail()` falls back to sending inline (nothing is ever lost).
+`direct: true` and send inline so they arrive at once. If the drain trigger cannot
+be installed, `sendMail()` falls back to sending inline (nothing is ever lost).
 
 Mails: OTP, welcome, new-ticket→CBA, ticket-received→requester, assigned→analyst,
 assigned→requester, status change, comment, approval request, approval decision,
@@ -531,7 +531,7 @@ npm run serve     # static server on :8080
   `dev/tests.js` (96 assertions: setup, signup, OTP, sessions, tickets, assignment,
   requester self-assign/close, status flow, approvals, reassignment, close/rate,
   analytics, and the `api()` router including role denial).
-- `dev/backend-test.js` — drives the JSON API end-to-end (90 assertions, incl. CBA
+- `dev/backend-test.js` — drives the JSON API end-to-end (91 assertions, incl. CBA
   analyst management, admin cross-cluster assign, USER self-assign + close, the
   setup-version guard, email deep links, and the mail queue).
 - `dev/web-test.js` — exercises the static front-end against `js/api.local.js`

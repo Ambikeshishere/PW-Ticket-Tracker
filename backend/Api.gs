@@ -106,13 +106,14 @@ function ensureMailTrigger_() {
   if (!MAIL_QUEUE_ENABLED) return;
   try {
     var props = PropertiesService.getScriptProperties();
-    if (props.getProperty('MAIL_TRIGGER_DONE') === '1') return;
+    if (props.getProperty('MAIL_TRIGGER_DONE') === '1') { MAIL_TRIGGER_OK = true; return; }
     var has = ScriptApp.getProjectTriggers().some(function (t) {
       try { return t.getHandlerFunction && t.getHandlerFunction() === 'drainMailQueue'; }
       catch (e) { return false; }
     });
     if (!has) ScriptApp.newTrigger('drainMailQueue').timeBased().everyMinutes(1).create();
     props.setProperty('MAIL_TRIGGER_DONE', '1');
+    MAIL_TRIGGER_OK = true;
   } catch (e) { logErr('ensureMailTrigger_', e); }
 }
 

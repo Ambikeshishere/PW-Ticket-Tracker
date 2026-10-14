@@ -282,6 +282,7 @@ t.ok('doGet without api returns a page', /API endpoint/.test(infoPage.getContent
 /* ----------------------------- mail queue ---------------------------- */
 t.section('mail queue');
 ctx.MAIL_QUEUE_ENABLED = true;
+ctx.MAIL_TRIGGER_OK = true;
 ctx.sendMail({ to: 'queue@pw.live', subject: 'Queued hello', htmlBody: '<p>hi</p>' });
 const queued = ctx.Db.find(ctx.SHEETS.MAILQUEUE, (r) => String(r.Status) === 'PENDING');
 t.ok('sendMail enqueues when the queue is on', queued.length >= 1);
@@ -291,7 +292,15 @@ t.ok('drainMailQueue sends pending mail', drained >= 1);
 t.ok('queued mail reached the outbox', globals.__test.sentMails.length > outboxBefore);
 const stillPending = ctx.Db.find(ctx.SHEETS.MAILQUEUE, (r) => String(r.Status) === 'PENDING');
 t.eq('queue is empty after drain', stillPending.length, 0);
+
+// Fallback: queue on but the drain trigger is not confirmed -> send inline.
+ctx.MAIL_TRIGGER_OK = false;
+const beforeFallback = globals.__test.sentMails.length;
+ctx.sendMail({ to: 'fallback@pw.live', subject: 'Inline fallback', htmlBody: '<p>x</p>' });
+t.ok('falls back to inline when the trigger is not installed', globals.__test.sentMails.length > beforeFallback);
+
 ctx.MAIL_QUEUE_ENABLED = false;
+ctx.MAIL_TRIGGER_OK = false;
 
 /* --------------------------- admin mail queue ------------------------ */
 t.section('admin mail queue diagnostic');

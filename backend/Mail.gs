@@ -12,8 +12,14 @@
 /** Set to false to send every mail inline (used by the test harnesses). */
 var MAIL_QUEUE_ENABLED = true;
 
+/**
+ * Set by ensureMailTrigger_() once the drain trigger is confirmed installed.
+ * If it is not, sendMail() falls back to sending inline so mail is never lost.
+ */
+var MAIL_TRIGGER_OK = false;
+
 function sendMail(opts) {
-  if (MAIL_QUEUE_ENABLED && !opts.direct) return queueMail_(opts);
+  if (MAIL_QUEUE_ENABLED && MAIL_TRIGGER_OK && !opts.direct) return queueMail_(opts);
   return deliverMail_(opts);
 }
 
