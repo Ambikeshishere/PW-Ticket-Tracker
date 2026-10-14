@@ -1,0 +1,11 @@
+{
+  "name": "pw-ticket-portal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PW Analytics Ticket Portal — Google Apps Script + Sheets web app. The dev/ folder is an offline test harness; it is not part of the deployed Apps Script project.",
+  "scripts": {
+    "test": "node dev/run.js",
+    "check": "node dev/check-client.js",
+    "verify": "node dev/run.js && node dev/check-client.js"
+  }
+}

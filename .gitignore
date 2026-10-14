@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Node (dev harness only)
+node_modules/
+npm-debug.log*
+
+# Local env / secrets — never commit
+.env
+.env.*
+*.local
+
+# Editor
+.vscode/
+.idea/
+
+# Old project recovery dump (kept locally, not part of the new app)
+_archive/
+
+# Apps Script / clasp local state
+.clasp.json
