@@ -40,9 +40,11 @@ var Approvals = {
     Tickets.log(t.TicketID, user, 'APPROVAL_REQUESTED', '', approver, approval.RequestNote);
     Auth.logActivity(user, 'APPROVAL_SENT', t.TicketID + ' -> ' + approver);
 
-    var base = webAppUrl();
-    var approveUrl = base + '?action=approve&t=' + token + '&a=' + approvalId;
-    var rejectUrl = base + '?action=reject&t=' + token + '&a=' + approvalId;
+    // Both buttons open the static portal's approval page; the approver then
+    // chooses Approve/Reject there (never auto-decided by a GET request).
+    var base = portalUrl();
+    var approveUrl = base + '#approve/' + approvalId + '/' + token;
+    var rejectUrl = approveUrl;
     try { mailApprovalRequest(approval, t, user, approveUrl, rejectUrl); } catch (e) { logErr('approvalMail', e); }
 
     return { approvalId: approvalId, approverEmail: approver, expiresAt: approval.ExpiresAt };

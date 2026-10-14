@@ -2,12 +2,15 @@
   "name": "pw-ticket-portal",
   "version": "1.0.0",
   "private": true,
-  "description": "PW Analytics Ticket Portal. Two builds: the static HTML/CSS/JS app (repo root: index.html, styles.css, js/) and the Google Apps Script + Sheets version (appsscript/). The dev/ folder is an offline test harness.",
+  "description": "PW Analytics Ticket Portal. Static HTML/CSS/JS front-end (repo root: index.html, styles.css, js/) with a Google Apps Script + Sheets JSON backend (backend/, deployed via clasp). dev/ is the offline test harness.",
   "scripts": {
     "test": "node dev/web-test.js",
+    "test:api": "node dev/backend-test.js",
     "test:gas": "node dev/run.js",
     "check": "node dev/check-client.js",
     "serve": "python3 -m http.server 8080",
-    "verify": "node dev/web-test.js && node dev/run.js && node dev/check-client.js"
+    "mock": "node dev/mock-server.js",
+    "push": "cd backend && npx --yes @google/clasp push -f",
+    "verify": "node dev/web-test.js && node dev/backend-test.js && node dev/run.js && node dev/check-client.js"
   }
 }

@@ -148,7 +148,7 @@ module.exports = function runTests(ctx, t) {
 
   // recover the raw token from the approval email link
   const apMail = ctx.__test.sentMails.filter((m) => m.to === 'boss@pw.live').pop();
-  const tokenMatch = apMail.htmlBody.match(/[?&]t=([a-f0-9]+)/);
+  const tokenMatch = apMail.htmlBody.match(/#approve\/[^\/]+\/([a-f0-9]+)/);
   const rawToken = tokenMatch ? tokenMatch[1] : null;
   ok('approval email carries a token', !!rawToken);
 

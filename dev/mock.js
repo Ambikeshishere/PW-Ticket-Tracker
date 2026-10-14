@@ -84,7 +84,8 @@ class Sheet {
 }
 
 class Spreadsheet {
-  constructor() { this._sheets = []; }
+  constructor() { this._sheets = []; this._id = 'MOCK_SHEET_ID'; }
+  getId() { return this._id; }
   getSheetByName(name) { return this._sheets.find((s) => s.name === name) || null; }
   insertSheet(name) { const s = new Sheet(name); this._sheets.push(s); return s; }
   getSheets() { return this._sheets.slice(); }
@@ -103,7 +104,21 @@ function buildGlobals() {
     /* spreadsheet */
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ss,
+      openById: () => ss,
+      create: () => ss,
       getUi: () => ({ createMenu: () => ({ addItem: () => ({ addItem: () => ({ addToUi: () => {} }) }) }) }),
+    },
+
+    /* script properties */
+    PropertiesService: {
+      getScriptProperties: () => {
+        const store = new Map();
+        return {
+          getProperty: (k) => (store.has(k) ? store.get(k) : null),
+          setProperty: (k, v) => { store.set(k, String(v)); },
+          deleteProperty: (k) => { store.delete(k); },
+        };
+      },
     },
 
     /* cache */
@@ -161,7 +176,22 @@ function buildGlobals() {
     HtmlService: {
       createTemplateFromFile: () => ({ evaluate: () => ({ setTitle: () => ({ addMetaTag: () => ({ setXFrameOptionsMode: () => ({}) }) }) }) }),
       createHtmlOutputFromFile: () => ({ getContent: () => '' }),
+      createHtmlOutput: (s) => ({ getContent: () => String(s) }),
       XFrameOptionsMode: { ALLOWALL: 'ALLOWALL' },
+    },
+
+    /* content service — used by the JSON API (Api.gs) */
+    ContentService: {
+      MimeType: { JSON: 'application/json', JAVASCRIPT: 'application/javascript', TEXT: 'text/plain' },
+      createTextOutput: (s) => {
+        const o = {
+          _content: String(s), _mime: 'text/plain',
+          setMimeType(m) { o._mime = m; return o; },
+          getContent() { return o._content; },
+          getMimeType() { return o._mime; },
+        };
+        return o;
+      },
     },
 
     Logger: { log: (m) => logs.push(String(m)) },

@@ -10,13 +10,13 @@ const path = require('path');
 const vm = require('vm');
 const { buildGlobals } = require('./mock');
 
-const ROOT = path.join(__dirname, '..', 'appsscript');
+const ROOT = path.join(__dirname, '..', 'backend');
 
 // Load order matters only where a file reads another at load time
 // (Setup.gs reads SHEETS from Config.gs), so Config/Db/Setup come first.
 const FILES = [
   'Config.gs', 'Db.gs', 'Setup.gs', 'Mail.gs', 'Auth.gs',
-  'Tickets.gs', 'Approvals.gs', 'Reassign.gs', 'Admin.gs', 'Triggers.gs', 'Code.gs',
+  'Tickets.gs', 'Approvals.gs', 'Reassign.gs', 'Admin.gs', 'Triggers.gs', 'Api.gs',
 ];
 
 /* --------------------------- test framework --------------------------- */

@@ -1,8 +1,8 @@
 /**
  * dev/check-client.js
- * Static contract checks between the client and the server:
- *   1. every call('name') in app.js.html exists in PUBLIC_API or PRIVATE_API
- *   2. every include('x') target in index.html exists as a file
+ * Static contract checks between the static front-end and the Apps Script API:
+ *   1. every call('name') in js/ui.js exists in PUBLIC_API or PRIVATE_API (backend/Api.gs)
+ *   2. every <script src="..."> in index.html exists as a file
  *   3. every $('id') the client looks up exists in index.html (soft warning)
  *
  *   node dev/check-client.js
@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.join(__dirname, '..', 'appsscript');
+const ROOT = path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 
 let fail = 0;
@@ -20,7 +20,7 @@ const ok = (m) => console.log('  ' + C.g + '✓' + C.x + ' ' + m);
 const bad = (m) => { fail++; console.log('  ' + C.r + '✗ ' + m + C.x); };
 const warn = (m) => console.log('  ' + C.y + '!' + C.x + ' ' + m);
 
-/* ---------- extract router keys from Code.gs ---------- */
+/* ---------- extract router keys from backend/Api.gs ---------- */
 function blockKeys(src, varName) {
   const start = src.indexOf('var ' + varName + ' = {');
   if (start < 0) return [];
@@ -38,38 +38,41 @@ function blockKeys(src, varName) {
   return keys;
 }
 
-const code = read('Code.gs');
-const publicKeys = blockKeys(code, 'PUBLIC_API');
-const privateKeys = blockKeys(code, 'PRIVATE_API');
+const apiSrc = read('backend/Api.gs');
+const publicKeys = blockKeys(apiSrc, 'PUBLIC_API');
+const privateKeys = blockKeys(apiSrc, 'PRIVATE_API');
 const allKeys = new Set([...publicKeys, ...privateKeys]);
 
 console.log(C.b + '\nClient ↔ server contract check' + C.x);
 
 /* ---------- 1. call('name') ---------- */
 console.log('\n' + C.b + '▸ API calls used by the client' + C.x);
-const appJs = read('app.js.html');
+const uiJs = read('js/ui.js');
 const calls = new Set();
 const callRe = /call\(\s*'([A-Za-z_][A-Za-z0-9_]*)'/g;
 let cm;
-while ((cm = callRe.exec(appJs))) calls.add(cm[1]);
+while ((cm = callRe.exec(uiJs))) calls.add(cm[1]);
+// direct API.call('name', ...) sites too
+const directRe = /API\.call\(\s*'([A-Za-z_][A-Za-z0-9_]*)'/g;
+while ((cm = directRe.exec(uiJs))) calls.add(cm[1]);
 
 if (!calls.size) bad('no call() sites found — did the client change?');
 [...calls].sort().forEach((name) => {
   if (allKeys.has(name)) ok("call('" + name + "') is routed");
-  else bad("call('" + name + "') has NO route in Code.gs");
+  else bad("call('" + name + "') has NO route in backend/Api.gs");
 });
 
-/* ---------- 2. include('x') ---------- */
-console.log('\n' + C.b + '▸ include() targets' + C.x);
+/* ---------- 2. <script src> ---------- */
+console.log('\n' + C.b + '▸ Script includes' + C.x);
 const index = read('index.html');
-const incRe = /include\(\s*'([^']+)'\s*\)/g;
-let im;
-const includes = [];
-while ((im = incRe.exec(index))) includes.push(im[1]);
-includes.forEach((name) => {
-  const file = name + '.html';
-  if (fs.existsSync(path.join(ROOT, file))) ok("include('" + name + "') → " + file);
-  else bad("include('" + name + "') → missing " + file);
+const srcRe = /<script[^>]*\ssrc="([^"]+)"/g;
+let sm;
+const srcs = [];
+while ((sm = srcRe.exec(index))) srcs.push(sm[1]);
+srcs.forEach((src) => {
+  if (/^https?:/.test(src)) { ok('external script ' + src); return; }
+  if (fs.existsSync(path.join(ROOT, src))) ok('script ' + src);
+  else bad('missing script ' + src);
 });
 
 /* ---------- 3. $('id') lookups (soft) ---------- */
@@ -77,15 +80,15 @@ console.log('\n' + C.b + '▸ Element ids referenced by the client' + C.x);
 const ids = new Set();
 const idRe = /\$\('([A-Za-z0-9_]+)'\)/g;
 let idm;
-while ((idm = idRe.exec(appJs))) ids.add(idm[1]);
+while ((idm = idRe.exec(uiJs))) ids.add(idm[1]);
 
 // ids that the client itself creates dynamically (in innerHTML templates)
 const dynamic = new Set();
 const dynRe = /id="([A-Za-z0-9_]+)"/g;
 let dm;
-while ((dm = dynRe.exec(appJs))) dynamic.add(dm[1]);
+while ((dm = dynRe.exec(uiJs))) dynamic.add(dm[1]);
 const dynRe2 = /id=\\'([A-Za-z0-9_]+)\\'/g;
-while ((dm = dynRe2.exec(appJs))) dynamic.add(dm[1]);
+while ((dm = dynRe2.exec(uiJs))) dynamic.add(dm[1]);
 
 const missing = [];
 ids.forEach((id) => {

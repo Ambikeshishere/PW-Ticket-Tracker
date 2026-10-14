@@ -18,7 +18,15 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
-  function fmt(v) { return Store.U.fmtDate(v); }
+  function fmt(v) {
+    if (!v) return '—';
+    var d = new Date(v);
+    if (isNaN(d.getTime())) return '—';
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return pad(d.getDate()) + ' ' + months[d.getMonth()] + ' ' + d.getFullYear() +
+      ', ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
   function toast(msg, type) {
     var el = $('toast');
     el.textContent = msg;
@@ -36,13 +44,10 @@
 
   /* --------------------------- api bridge ---------------------------- */
   function call(name, payload) {
-    return new Promise(function (resolve, reject) {
-      var res;
-      try { res = API.call(name, state.token, payload || {}); }
-      catch (e) { return reject(e); }
-      if (res.ok) return resolve(res.data);
-      if (res.error === 'SESSION_EXPIRED') { doLogout(true); return reject(new Error('Session expired')); }
-      reject(new Error(res.error || 'Request failed'));
+    return API.call(name, state.token, payload || {}).then(function (res) {
+      if (res.ok) return res.data;
+      if (res.error === 'SESSION_EXPIRED') { doLogout(true); throw new Error('Session expired'); }
+      throw new Error(res.error || 'Request failed');
     });
   }
 
@@ -70,9 +75,11 @@
 
     var t = localStorage.getItem('pw_token');
     if (t) {
-      var me = API.call('me', t, {});
-      if (me.ok) { state.token = t; state.user = me.data; enterApp(); return; }
-      localStorage.removeItem('pw_token');
+      API.call('me', t, {}).then(function (me) {
+        if (me.ok) { state.token = t; state.user = me.data; enterApp(); }
+        else { localStorage.removeItem('pw_token'); showAuth(); wireAuth(); }
+      });
+      return;
     }
     showAuth();
     wireAuth();
@@ -113,14 +120,8 @@
     call('requestOtp', { email: email }).then(function (d) {
       $('otpBlock').classList.remove('hidden');
       $('otpReveal').classList.remove('hidden');
-      if (d.demoOtp) {
-        $('otpReveal').innerHTML = 'Demo OTP (no real email sent): <b>' + h(d.demoOtp) + '</b>';
-        $('loginOtp').value = d.demoOtp;
-        toast('OTP sent — shown above (demo)', 'ok');
-      } else {
-        $('otpReveal').innerHTML = d.message || 'Check your email for the OTP.';
-        toast('If registered, an OTP was sent', 'ok');
-      }
+      $('otpReveal').innerHTML = d.message || 'If this email is registered, we\'ve sent a one-time code. Check your inbox.';
+      toast('If registered, an OTP was sent', 'ok');
       $('loginOtp').focus();
     }).catch(function (e) { toast(e.message, 'err'); })
       .then(function () { b.disabled = false; b.textContent = 'Send OTP'; });
@@ -190,8 +191,6 @@
       items.push({ id: 'clusters', label: 'Clusters', icon: '🧩' });
       items.push({ id: 'activity', label: 'Activity', icon: '📊' });
       items.push({ id: 'analytics', label: 'Analytics', icon: '📈' });
-      items.push({ id: 'mails', label: 'Email log', icon: '✉' });
-      items.push({ id: 'reset', label: 'Reset demo data', icon: '↺' });
     }
     return items;
   }
@@ -207,12 +206,6 @@
     });
   }
   function setView(v) {
-    if (v === 'reset') {
-      if (window.confirm('Reset all demo data back to the seeded sample? This cannot be undone.')) {
-        Store.reset(); localStorage.removeItem('pw_token'); location.reload();
-      }
-      return;
-    }
     state.view = v;
     renderNav();
     $('content').innerHTML = '<div class="loading">' + spin() + ' Loading…</div>';
@@ -220,7 +213,7 @@
       dashboard: renderDashboard, tickets: renderTickets, new: renderNewTicket,
       approvals: renderApprovals, reassign: renderReassign, workload: renderWorkload,
       users: renderUsers, clusters: renderClusters, activity: renderActivity,
-      analytics: renderAnalytics, mails: renderMails
+      analytics: renderAnalytics
     };
     (map[v] || function () { $('content').innerHTML = '<div class="empty">Unknown view</div>'; })();
     refreshBadge();
@@ -597,22 +590,6 @@
     }).catch(function (e) { toast(e.message, 'err'); });
   }
 
-  /* ---------------------------- mails -------------------------------- */
-  function renderMails() {
-    call('adminMails', {}).then(function (mails) {
-      var rows = mails.slice(0, 100).map(function (m) {
-        return '<tr><td>' + h(m.To) + '</td><td><b>' + h(m.Subject) + '</b></td>' +
-          '<td class="muted" style="white-space:normal;max-width:420px">' + h(m.Body) + '</td>' +
-          '<td class="muted" style="white-space:nowrap">' + fmt(m.SentAt) + '</td></tr>';
-      }).join('');
-      $('content').innerHTML =
-        '<div class="page-head"><h2>Email log</h2><span class="pill">' + mails.length + ' messages (demo — nothing is actually sent)</span></div>' +
-        '<div class="card"><div class="table-wrap">' +
-          (mails.length ? '<table class="tbl"><thead><tr><th>To</th><th>Subject</th><th>Body</th><th>Sent</th></tr></thead><tbody>' + rows + '</tbody></table>' : '<div class="empty">No emails yet.</div>') +
-        '</div></div>';
-    }).catch(function (e) { $('content').innerHTML = '<div class="empty">' + h(e.message) + '</div>'; });
-  }
-
   /* --------------------------- ticket drawer ------------------------- */
   function openTicket(id) {
     $('drawer').classList.remove('hidden');
@@ -772,20 +749,16 @@
     });
   }
   function approvalModal(t) {
-    openModal('Request external approval', '<p class="muted">In this demo an approval link is generated (no real email).</p>' +
+    openModal('Request external approval', '<p class="muted">The approver receives an email with a secure link to approve or reject.</p>' +
       '<div class="field"><label>Approver email</label><input id="apEmail" placeholder="approver@pw.live"></div>' +
       '<div class="field"><label>Note / what needs approval</label><textarea id="apReason"></textarea></div>',
       '<button class="btn" data-close-modal>Cancel</button><button class="btn primary" id="apGo">Send request</button>');
     $('apGo').onclick = function () {
       call('requestApproval', { ticketId: t.ticketId, approverEmail: $('apEmail').value, note: $('apReason').value })
         .then(function (r) {
-          closeModal(); toast('Approval request created', 'ok');
-          var link = '#approve/' + r.approvalId + '/' + r.demoToken;
+          closeModal();
+          toast('Approval request sent to ' + r.approverEmail, 'ok');
           openTicket(t.ticketId);
-          if (window.confirm('Approval request sent to ' + r.approverEmail + '.\n\nOpen the approver\'s page now? (demo)')) {
-            location.hash = link;
-            showApproval();
-          }
         })
         .catch(function (e) { toast(e.message, 'err'); });
     };
@@ -801,45 +774,48 @@
   }
   function loadApproval() {
     var ap = state.approval;
-    var res = API.call('getApproval', null, { t: ap.token, a: ap.id });
-    if (!res.ok) { $('approvalBody').innerHTML = '<div class="empty">' + h(res.error) + '</div>'; return; }
-    var info = res.data;
-    var tk = info.ticket || {};
-    var body =
-      '<div class="brand"><div class="brand-mark">PW</div><div><h1>Approval request</h1><p class="muted">' + h(info.approvalId) + '</p></div></div>' +
-      '<div class="kv">' +
-        '<div class="k">Ticket</div><div class="v">' + h(tk.ticketId) + '</div>' +
-        '<div class="k">Title</div><div class="v">' + h(tk.title) + '</div>' +
-        '<div class="k">Priority</div><div class="v">' + priorityBadge(tk.priority) + '</div>' +
-        '<div class="k">Requester</div><div class="v">' + h(tk.raisedByName) + ' (' + h(tk.raisedByEmail) + ')</div>' +
-        '<div class="k">Contact</div><div class="v">' + h(tk.raisedByPhone || '—') + '</div>' +
-        '<div class="k">Note</div><div class="v">' + h(info.note || '—') + '</div>' +
-      '</div>' +
-      '<div class="section"><p style="white-space:pre-wrap;margin:0">' + h(tk.description) + '</p></div>';
+    $('approvalBody').innerHTML = '<div class="loading">' + spin() + ' Loading…</div>';
+    API.call('getApproval', null, { t: ap.token, a: ap.id }).then(function (res) {
+      if (!res.ok) { $('approvalBody').innerHTML = '<div class="empty">' + h(res.error) + '</div>'; return; }
+      var info = res.data;
+      var tk = info.ticket || {};
+      var body =
+        '<div class="brand"><div class="brand-mark">PW</div><div><h1>Approval request</h1><p class="muted">' + h(info.approvalId) + '</p></div></div>' +
+        '<div class="kv">' +
+          '<div class="k">Ticket</div><div class="v">' + h(tk.ticketId) + '</div>' +
+          '<div class="k">Title</div><div class="v">' + h(tk.title) + '</div>' +
+          '<div class="k">Priority</div><div class="v">' + priorityBadge(tk.priority) + '</div>' +
+          '<div class="k">Requester</div><div class="v">' + h(tk.raisedByName) + ' (' + h(tk.raisedByEmail) + ')</div>' +
+          '<div class="k">Contact</div><div class="v">' + h(tk.raisedByPhone || '—') + '</div>' +
+          '<div class="k">Note</div><div class="v">' + h(info.note || '—') + '</div>' +
+        '</div>' +
+        '<div class="section"><p style="white-space:pre-wrap;margin:0">' + h(tk.description) + '</p></div>';
 
-    if (!info.canDecide) {
-      body += '<div class="section"><b>This request is ' + h(String(info.status).toLowerCase()) + '</b>' +
-        (info.decidedAt ? ' on ' + fmt(info.decidedAt) : '') +
-        (info.decisionNote ? '<div class="muted">Comment: ' + h(info.decisionNote) + '</div>' : '') + '</div>' +
-        '<div class="inline" style="margin-top:8px"><a class="btn" href="#" onclick="location.hash=\'\';location.reload();return false;">Back to portal</a></div>';
-    } else {
-      body += '<div class="field"><label>Comments (optional)</label><textarea id="apComments"></textarea></div>' +
-        '<div class="inline"><button class="btn success" id="apApprove">✓ Approve</button><button class="btn danger" id="apReject">✕ Reject</button></div>';
-    }
-    $('approvalBody').innerHTML = body;
-    if (info.canDecide) {
-      $('apApprove').onclick = function () { submitApproval('APPROVED'); };
-      $('apReject').onclick = function () { submitApproval('REJECTED'); };
-    }
+      if (!info.canDecide) {
+        body += '<div class="section"><b>This request is ' + h(String(info.status).toLowerCase()) + '</b>' +
+          (info.decidedAt ? ' on ' + fmt(info.decidedAt) : '') +
+          (info.decisionNote ? '<div class="muted">Comment: ' + h(info.decisionNote) + '</div>' : '') + '</div>' +
+          '<div class="inline" style="margin-top:8px"><a class="btn" href="#" onclick="location.hash=\'\';location.reload();return false;">Back to portal</a></div>';
+      } else {
+        body += '<div class="field"><label>Comments (optional)</label><textarea id="apComments"></textarea></div>' +
+          '<div class="inline"><button class="btn success" id="apApprove">✓ Approve</button><button class="btn danger" id="apReject">✕ Reject</button></div>';
+      }
+      $('approvalBody').innerHTML = body;
+      if (info.canDecide) {
+        $('apApprove').onclick = function () { submitApproval('APPROVED'); };
+        $('apReject').onclick = function () { submitApproval('REJECTED'); };
+      }
+    });
   }
   function submitApproval(decision) {
-    var res = API.call('decideApproval', null, {
+    API.call('decideApproval', null, {
       t: state.approval.token, a: state.approval.id, decision: decision,
       note: $('apComments') ? $('apComments').value : ''
+    }).then(function (res) {
+      if (!res.ok) { toast(res.error, 'err'); return; }
+      toast('Thank you — response recorded', 'ok');
+      loadApproval();
     });
-    if (!res.ok) { toast(res.error, 'err'); return; }
-    toast('Thank you — response recorded', 'ok');
-    loadApproval();
   }
 
   /* ------------------------------ modal ------------------------------ */

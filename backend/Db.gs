@@ -7,13 +7,27 @@
  */
 
 var Db = {
+  /**
+   * Returns the backing spreadsheet, working for both bound and standalone
+   * scripts:
+   *   1. SHEET_ID constant (Config.gs), or a remembered script property
+   *   2. the bound spreadsheet (Extensions ▸ Apps Script)
+   *   3. otherwise creates a new spreadsheet and remembers its ID
+   */
   ss: function () {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    if (!ss) {
-      throw new Error('No Google Sheet is bound to this script. Open your sheet, ' +
-        'then Extensions > Apps Script.');
+    var props = PropertiesService.getScriptProperties();
+    var id = props.getProperty('SHEET_ID') || SHEET_ID;
+    if (id) return SpreadsheetApp.openById(id);
+
+    var active = SpreadsheetApp.getActiveSpreadsheet();
+    if (active) {
+      try { props.setProperty('SHEET_ID', active.getId()); } catch (e) {}
+      return active;
     }
-    return ss;
+
+    var created = SpreadsheetApp.create('PW Ticket Portal — Database');
+    try { props.setProperty('SHEET_ID', created.getId()); } catch (e) {}
+    return created;
   },
 
   sheet: function (name) {
@@ -162,6 +176,16 @@ function escHtml(s) {
 
 function webAppUrl() {
   try { return ScriptApp.getService().getUrl(); } catch (e) { return ''; }
+}
+
+/**
+ * The public URL of the static front-end (GitHub Pages), used in email links.
+ * Falls back to this Apps Script web-app URL when PORTAL_URL is not set.
+ */
+function portalUrl() {
+  var u = String(cfg('PORTAL_URL') || '').trim();
+  if (u) return u.replace(/\/+$/, '');
+  return webAppUrl();
 }
 
 function logErr(where, e) {

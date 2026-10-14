@@ -1,7 +1,8 @@
 /* ============================================================
-   dev/web-test.js — offline test for the static (browser) app.
-   Loads js/store.js + js/api.js in a vm sandbox with a
+   dev/web-test.js — offline test for the local (browser) backend.
+   Loads js/store.js + js/api.local.js in a vm sandbox with a
    localStorage shim, then exercises the real flows.
+   (The live portal uses js/api.js, the network client, instead.)
    Run:  node dev/web-test.js
    ============================================================ */
 'use strict';
@@ -51,7 +52,7 @@ sandbox.setTimeout = setTimeout;
 sandbox.parseInt = parseInt;
 vm.createContext(sandbox);
 
-for (const f of ['js/store.js', 'js/api.js']) {
+for (const f of ['js/store.js', 'js/api.local.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
 }
 const Store = sandbox.Store;

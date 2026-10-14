@@ -68,7 +68,7 @@ function mailWelcome(email, name) {
     htmlBody: shell('Welcome aboard',
       '<p>Hi ' + escHtml(name) + ',</p><p>Your account is ready. You can now raise ' +
       'requests to the Analytics team and track them.</p>' +
-      button('Open the portal', webAppUrl()))
+      button('Open the portal', portalUrl()))
   });
 }
 
@@ -84,7 +84,7 @@ function mailNewTicketToCba(ticket, cbaEmail) {
         ['Ticket', ticket.TicketID], ['Title', ticket.Title],
         ['Priority', ticket.Priority], ['Category', ticket.Category],
         ['Requester', ticket.RaisedByName + ' (' + ticket.RaisedByEmail + ')']
-      ]) + button('Open portal', webAppUrl()))
+      ]) + button('Open portal', portalUrl()))
   });
 }
 
@@ -97,7 +97,7 @@ function mailTicketCreatedToUser(ticket) {
       kvTable([
         ['Ticket', ticket.TicketID], ['Title', ticket.Title],
         ['Priority', ticket.Priority], ['Due by', fmtDate(ticket.DueAt)]
-      ]) + button('Track it', webAppUrl()))
+      ]) + button('Track it', portalUrl()))
   });
 }
 
@@ -111,7 +111,7 @@ function mailAssignedToAnalyst(ticket, analystEmail, actorName) {
         ['Ticket', ticket.TicketID], ['Title', ticket.Title],
         ['Priority', ticket.Priority], ['Requester', ticket.RaisedByName],
         ['Due by', fmtDate(ticket.DueAt)]
-      ]) + button('Open ticket', webAppUrl()))
+      ]) + button('Open ticket', portalUrl()))
   });
 }
 
@@ -148,7 +148,7 @@ function mailComment(ticket, actor, text) {
     htmlBody: shell('New comment on ' + ticket.TicketID,
       '<p><b>' + escHtml(actor.Name || actor.Email) + '</b> wrote:</p>' +
       '<blockquote style="border-left:3px solid #2563eb;margin:0;padding:6px 12px;color:#374151">' +
-      escHtml(text) + '</blockquote>' + button('View ticket', webAppUrl()))
+      escHtml(text) + '</blockquote>' + button('View ticket', portalUrl()))
   });
 }
 
@@ -201,7 +201,7 @@ function mailReassignRequest(req, ticket, actor) {
       kvTable([
         ['Ticket', req.TicketID], ['Title', ticket.Title],
         ['From', req.FromAnalyst], ['To', req.ToAnalyst], ['Reason', req.Reason]
-      ]) + button('Open approvals', webAppUrl()))
+      ]) + button('Open approvals', portalUrl()))
   });
 }
 

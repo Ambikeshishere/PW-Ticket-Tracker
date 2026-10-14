@@ -22,6 +22,14 @@ var SHEETS = {
 
 var ROLES = { USER: 'USER', CBA: 'CBA', ANALYST: 'ANALYST', ADMIN: 'ADMIN' };
 
+/**
+ * Optional: the ID of the Google Sheet that stores the data.
+ * - If this script is bound to a Sheet (Extensions ▸ Apps Script), leave it ''.
+ * - If this is a standalone script, either paste the Sheet ID here, or just run
+ *   setup() once — it will create a Sheet and remember its ID automatically.
+ */
+var SHEET_ID = '';
+
 var TICKET_STATUSES = [
   'NEW', 'ASSIGNED', 'IN_PROGRESS', 'PENDING_APPROVAL',
   'ON_HOLD', 'RESOLVED', 'CLOSED', 'REOPENED'
@@ -33,6 +41,9 @@ var PRIORITIES = ['Low', 'Medium', 'High'];
 var DEFAULT_CONFIG = {
   APP_NAME: 'PW Analytics Ticket Portal',
   ADMIN_EMAIL: 'ambikesh.srivastava@pw.live',
+  // Public URL of the static front-end (GitHub Pages). Used in every email
+  // link. Leave blank to fall back to this Apps Script web-app URL.
+  PORTAL_URL: '',
   ALLOWED_DOMAIN: 'pw.live',          // '' to allow any email
   OTP_EXPIRY_MIN: '5',
   OTP_MAX_ATTEMPTS: '3',

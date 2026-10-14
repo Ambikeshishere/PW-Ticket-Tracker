@@ -38,7 +38,7 @@ function dailyReminders() {
         '<ul>' + list.map(function (t) {
           return '<li><b>' + escHtml(t.TicketID) + '</b> — ' + escHtml(t.Title) +
             ' (' + escHtml(t.Priority) + ')</li>';
-        }).join('') + '</ul>' + button('Open portal', webAppUrl()))
+        }).join('') + '</ul>' + button('Open portal', portalUrl()))
     });
   });
 
@@ -60,7 +60,7 @@ function dailyReminders() {
         '<ul>' + list.map(function (t) {
           return '<li><b>' + escHtml(t.TicketID) + '</b> — ' + escHtml(t.Title) +
             ' [' + escHtml(t.Status) + ']</li>';
-        }).join('') + '</ul>' + button('Open portal', webAppUrl()))
+        }).join('') + '</ul>' + button('Open portal', portalUrl()))
     });
   });
   return true;
