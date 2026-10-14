@@ -1,6 +1,7 @@
 /**
  * Triggers.gs
  * Time-driven automation. Run setupTriggers() once from the editor.
+ *   - drainMailQueue  : every minute — sends queued workflow email
  *   - dailyReminders  : 09:00 daily — pending work digests
  *   - hourlySlaCheck  : hourly — SLA warnings + overdue escalation e.g. every hour
  *   - cleanupExpired  : 02:00 daily — expired OTP/sessions, auto-close resolved tickets
@@ -8,6 +9,7 @@
 
 function setupTriggers() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('drainMailQueue').timeBased().everyMinutes(1).create();
   ScriptApp.newTrigger('dailyReminders').timeBased().everyDays(1).atHour(9).create();
   ScriptApp.newTrigger('hourlySlaCheck').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('cleanupExpired').timeBased().everyDays(1).atHour(2).create();

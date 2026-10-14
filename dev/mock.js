@@ -165,7 +165,7 @@ function buildGlobals() {
       getProjectTriggers: () => [],
       deleteTrigger: () => {},
       newTrigger: () => {
-        const b = { timeBased: () => b, everyDays: () => b, everyHours: () => b, atHour: () => b, create: () => ({}) };
+        const b = { timeBased: () => b, everyDays: () => b, everyHours: () => b, everyMinutes: () => b, atHour: () => b, create: () => ({}) };
         return b;
       },
     },

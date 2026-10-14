@@ -42,6 +42,10 @@ function portalHeaders_() {
   HEADERS[SHEETS.OTP] = ['Email', 'OtpHash', 'ExpiresAt', 'Attempts', 'CreatedAt'];
   HEADERS[SHEETS.SESSIONS] = ['TokenHash', 'Email', 'Role', 'CreatedAt', 'ExpiresAt', 'LastSeenAt'];
   HEADERS[SHEETS.ACTIVITY] = ['Timestamp', 'Email', 'Role', 'Event', 'Meta'];
+  HEADERS[SHEETS.MAILQUEUE] = [
+    'QueueID', 'To', 'Subject', 'HtmlBody', 'ReplyTo', 'Status', 'Attempts',
+    'CreatedAt', 'SentAt', 'Error'
+  ];
   HEADERS[SHEETS.CONFIG] = ['Key', 'Value'];
   return HEADERS;
 }
@@ -51,7 +55,7 @@ function portalSheetOrder_() {
   return [
     SHEETS.USERS, SHEETS.CLUSTERS, SHEETS.TICKETS, SHEETS.LOGS, SHEETS.COMMENTS,
     SHEETS.APPROVALS, SHEETS.REASSIGN, SHEETS.OTP, SHEETS.SESSIONS,
-    SHEETS.ACTIVITY, SHEETS.CONFIG
+    SHEETS.ACTIVITY, SHEETS.MAILQUEUE, SHEETS.CONFIG
   ];
 }
 
@@ -90,6 +94,9 @@ function setup() {
   seedConfig_();
   seedAdminCluster_();
   seedAdmin_();
+
+  // Headers were written directly (not through Db), so drop any cached reads.
+  Db.clearCache();
 
   try { ss.toast('Ticket Portal setup complete.', 'Setup', 5); } catch (e) {}
   return true;

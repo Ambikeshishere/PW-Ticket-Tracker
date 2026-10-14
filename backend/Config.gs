@@ -17,6 +17,7 @@ var SHEETS = {
   OTP: 'OTP',
   SESSIONS: 'Sessions',
   ACTIVITY: 'ActivityLog',
+  MAILQUEUE: 'MailQueue',
   CONFIG: 'Config'
 };
 
@@ -41,7 +42,7 @@ var FRONTEND_URL = 'https://ambikeshishere.github.io/PW-Ticket-Tracker/';
  * cluster). ensureSetup_() re-runs setup() once for existing installs whose
  * stored version is older, so new seeds reach already-provisioned Sheets.
  */
-var SETUP_VERSION = 2;
+var SETUP_VERSION = 3;
 
 /**
  * Optional: the ID of the Google Sheet that stores the data.

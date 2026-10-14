@@ -79,19 +79,40 @@ function ensureSetup_() {
   var props = PropertiesService.getScriptProperties();
   var done = props.getProperty('SETUP_DONE') === '1' &&
     props.getProperty('SETUP_VERSION') === String(SETUP_VERSION);
-  if (done) return;
-
-  var lock = LockService.getScriptLock();
-  try { lock.waitLock(30000); } catch (e) { /* proceed anyway */ }
-  try {
-    if (props.getProperty('SETUP_DONE') === '1' &&
-        props.getProperty('SETUP_VERSION') === String(SETUP_VERSION)) return;
-    setup();
-    props.setProperty('SETUP_DONE', '1');
-    props.setProperty('SETUP_VERSION', String(SETUP_VERSION));
-  } finally {
-    try { lock.releaseLock(); } catch (e) {}
+  if (!done) {
+    var lock = LockService.getScriptLock();
+    try { lock.waitLock(30000); } catch (e) { /* proceed anyway */ }
+    try {
+      var stillDone = props.getProperty('SETUP_DONE') === '1' &&
+        props.getProperty('SETUP_VERSION') === String(SETUP_VERSION);
+      if (!stillDone) {
+        setup();
+        props.setProperty('SETUP_DONE', '1');
+        props.setProperty('SETUP_VERSION', String(SETUP_VERSION));
+      }
+    } finally {
+      try { lock.releaseLock(); } catch (e) {}
+    }
   }
+  ensureMailTrigger_();
+}
+
+/**
+ * Installs the 1-minute mail-drain trigger once, so queued workflow email is
+ * actually delivered. Guarded by a script property; never breaks a request.
+ */
+function ensureMailTrigger_() {
+  if (!MAIL_QUEUE_ENABLED) return;
+  try {
+    var props = PropertiesService.getScriptProperties();
+    if (props.getProperty('MAIL_TRIGGER_DONE') === '1') return;
+    var has = ScriptApp.getProjectTriggers().some(function (t) {
+      try { return t.getHandlerFunction && t.getHandlerFunction() === 'drainMailQueue'; }
+      catch (e) { return false; }
+    });
+    if (!has) ScriptApp.newTrigger('drainMailQueue').timeBased().everyMinutes(1).create();
+    props.setProperty('MAIL_TRIGGER_DONE', '1');
+  } catch (e) { logErr('ensureMailTrigger_', e); }
 }
 
 /** Runs one API call and always returns a plain { ok, data|error } object. */

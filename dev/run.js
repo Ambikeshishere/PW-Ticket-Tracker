@@ -54,6 +54,9 @@ for (const f of FILES) {
   }
 }
 
+// Tests assert on the mock outbox, so send mail inline instead of queueing it.
+ctx.MAIL_QUEUE_ENABLED = false;
+
 /* -------------------------------- run --------------------------------- */
 console.log(C.b + '\nPW Ticket Portal — backend test suite' + C.x);
 

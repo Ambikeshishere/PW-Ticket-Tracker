@@ -8,7 +8,7 @@
   var state = {
     token: null, user: null, view: 'dashboard',
     tickets: [], filters: { q: '', status: '', priority: '', page: 1, pageSize: 20 },
-    total: 0, pendingCount: 0, approval: null, pendingTicket: null
+    total: 0, pendingCount: 0, approval: null, pendingTicket: null, badgeAt: 0
   };
 
   /* ------------------------------ utils ------------------------------ */
@@ -236,18 +236,29 @@
       analytics: renderAnalytics, analysts: renderAnalysts
     };
     (map[v] || function () { $('content').innerHTML = '<div class="empty">Unknown view</div>'; })();
-    refreshBadge();
+    // The dashboard view already fetches the counts the badge needs, so only
+    // refresh it for other views (and even then at most once every 15s).
+    if (v !== 'dashboard') refreshBadge();
   }
-  function refreshBadge() {
+  function refreshBadge(force) {
     var r = state.user.role;
     if (r !== 'CBA' && r !== 'ADMIN') return;
-    call('dashboard', {}).then(function (d) { state.pendingCount = d.pendingReassignments || 0; renderNav(); }).catch(function () {});
+    if (!force && Date.now() - state.badgeAt < 15000) return;
+    call('dashboard', {}).then(function (d) {
+      state.pendingCount = d.pendingReassignments || 0;
+      state.badgeAt = Date.now();
+      renderNav();
+    }).catch(function () {});
   }
 
   /* ---------------------------- dashboard ---------------------------- */
   function renderDashboard() {
     call('dashboard', {}).then(function (d) {
       var r = state.user.role;
+      // Reuse this response for the nav badge so we don't fetch dashboard twice.
+      state.pendingCount = d.pendingReassignments || 0;
+      state.badgeAt = Date.now();
+      renderNav();
       var cards = [
         { n: d.total, l: r === 'ADMIN' ? 'Total tickets' : 'Tickets in view' },
         { n: d.open, l: 'Open' }, { n: d.closed, l: 'Closed' }

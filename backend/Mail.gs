@@ -2,9 +2,23 @@
  * Mail.gs
  * All outbound email. Every workflow mail funnels through here so failures
  * never break a user action (a failed mail returns false, it never throws).
+ *
+ * Speed: MailApp.sendEmail() takes 1-2s per message, and a single action can
+ * trigger several. So workflow mail is written to the MailQueue tab and sent
+ * by a 1-minute time-driven trigger (drainMailQueue), keeping the request path
+ * fast. Login OTPs bypass the queue (opts.direct) so they arrive immediately.
  */
 
+/** Set to false to send every mail inline (used by the test harnesses). */
+var MAIL_QUEUE_ENABLED = true;
+
 function sendMail(opts) {
+  if (MAIL_QUEUE_ENABLED && !opts.direct) return queueMail_(opts);
+  return deliverMail_(opts);
+}
+
+/** Actually hands a message to Gmail. Never throws. */
+function deliverMail_(opts) {
   try {
     MailApp.sendEmail({
       to: opts.to,
@@ -18,6 +32,48 @@ function sendMail(opts) {
     logErr('sendMail', e);
     return false;
   }
+}
+
+/** Appends a message to the MailQueue tab. Falls back to a direct send. */
+function queueMail_(opts) {
+  try {
+    Db.insert(SHEETS.MAILQUEUE, {
+      QueueID: 'MQ-' + randomToken().slice(0, 12),
+      To: opts.to || '',
+      Subject: opts.subject || '',
+      HtmlBody: opts.htmlBody || '',
+      ReplyTo: opts.replyTo || '',
+      Status: 'PENDING',
+      Attempts: 0,
+      CreatedAt: now().toISOString(),
+      SentAt: '',
+      Error: ''
+    });
+    return true;
+  } catch (e) {
+    logErr('queueMail_', e);
+    return deliverMail_(opts);
+  }
+}
+
+/** Sends up to `limit` queued messages. Run by the mail-drain trigger. */
+function drainMailQueue(limit) {
+  limit = limit || 25;
+  var pending = Db.find(SHEETS.MAILQUEUE, function (r) {
+    return String(r.Status || 'PENDING').toUpperCase() === 'PENDING';
+  }).slice(0, limit);
+  var sent = 0;
+  pending.forEach(function (r) {
+    var ok = deliverMail_({ to: r.To, subject: r.Subject, htmlBody: r.HtmlBody, replyTo: r.ReplyTo });
+    Db.update(SHEETS.MAILQUEUE, r._row, {
+      Status: ok ? 'SENT' : 'FAILED',
+      Attempts: Number(r.Attempts || 0) + 1,
+      SentAt: ok ? now().toISOString() : '',
+      Error: ok ? '' : 'send failed'
+    });
+    if (ok) sent++;
+  });
+  return sent;
 }
 
 function shell(title, bodyHtml) {
@@ -58,7 +114,7 @@ function mailOtp(email, name, code) {
     '<div style="font-size:32px;font-weight:700;letter-spacing:8px;text-align:center;' +
     'padding:16px;background:#f3f4f6;border-radius:10px;margin:16px 0">' + escHtml(code) + '</div>' +
     '<p style="color:#6b7280;font-size:12px">If you did not request this, ignore this email.</p>');
-  return sendMail({ to: email, subject: cfg('APP_NAME') + ' - Login OTP', htmlBody: html });
+  return sendMail({ to: email, subject: cfg('APP_NAME') + ' - Login OTP', htmlBody: html, direct: true });
 }
 
 function mailWelcome(email, name) {

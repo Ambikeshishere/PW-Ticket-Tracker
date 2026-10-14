@@ -42,6 +42,9 @@ for (const f of FILES) {
   catch (e) { console.error(C.r + 'Failed to load ' + f + ': ' + e.message + C.x); process.exit(1); }
 }
 
+// Tests assert on the mock outbox, so send mail inline instead of queueing it.
+ctx.MAIL_QUEUE_ENABLED = false;
+
 const call = (name, token, payload) => ctx.handle({ api: name, token: token || '', payload: payload || {} });
 const post = (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } }).getContent());
 const get = (params) => ctx.doGet({ parameter: params });
@@ -275,6 +278,20 @@ t.eq('doPost malformed body -> ok:false', malformed.ok, false);
 
 const infoPage = get({});
 t.ok('doGet without api returns a page', /API endpoint/.test(infoPage.getContent()));
+
+/* ----------------------------- mail queue ---------------------------- */
+t.section('mail queue');
+ctx.MAIL_QUEUE_ENABLED = true;
+ctx.sendMail({ to: 'queue@pw.live', subject: 'Queued hello', htmlBody: '<p>hi</p>' });
+const queued = ctx.Db.find(ctx.SHEETS.MAILQUEUE, (r) => String(r.Status) === 'PENDING');
+t.ok('sendMail enqueues when the queue is on', queued.length >= 1);
+const outboxBefore = globals.__test.sentMails.length;
+const drained = ctx.drainMailQueue(50);
+t.ok('drainMailQueue sends pending mail', drained >= 1);
+t.ok('queued mail reached the outbox', globals.__test.sentMails.length > outboxBefore);
+const stillPending = ctx.Db.find(ctx.SHEETS.MAILQUEUE, (r) => String(r.Status) === 'PENDING');
+t.eq('queue is empty after drain', stillPending.length, 0);
+ctx.MAIL_QUEUE_ENABLED = false;
 
 /* ------------------------------- report ------------------------------ */
 console.log('\n' + C.b + '────────────────────────────' + C.x);

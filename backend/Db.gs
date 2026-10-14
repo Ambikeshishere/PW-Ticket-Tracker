@@ -7,27 +7,42 @@
  */
 
 var Db = {
+  /* Per-execution caches. Apps Script reuses the global scope for the whole
+   * request, so these make repeated reads free and collapse the many
+   * SpreadsheetApp.openById() calls into one. They are cleared on every write. */
+  _ss: null,
+  _cache: {},
+
   /**
    * Returns the backing spreadsheet, working for both bound and standalone
    * scripts:
    *   1. SHEET_ID constant (Config.gs), or a remembered script property
    *   2. the bound spreadsheet (Extensions ▸ Apps Script)
    *   3. otherwise creates a new spreadsheet and remembers its ID
+   *
+   * The result is memoised for the lifetime of the execution: opening a
+   * spreadsheet is one of the slowest Apps Script calls, and the old code did
+   * it on every single read/write.
    */
   ss: function () {
+    if (this._ss) return this._ss;
     var props = PropertiesService.getScriptProperties();
     var id = props.getProperty('SHEET_ID') || SHEET_ID;
-    if (id) return SpreadsheetApp.openById(id);
-
-    var active = SpreadsheetApp.getActiveSpreadsheet();
-    if (active) {
-      try { props.setProperty('SHEET_ID', active.getId()); } catch (e) {}
-      return active;
+    var ss;
+    if (id) {
+      ss = SpreadsheetApp.openById(id);
+    } else {
+      var active = SpreadsheetApp.getActiveSpreadsheet();
+      if (active) {
+        try { props.setProperty('SHEET_ID', active.getId()); } catch (e) {}
+        ss = active;
+      } else {
+        ss = SpreadsheetApp.create('PW Ticket Portal — Database');
+        try { props.setProperty('SHEET_ID', ss.getId()); } catch (e) {}
+      }
     }
-
-    var created = SpreadsheetApp.create('PW Ticket Portal — Database');
-    try { props.setProperty('SHEET_ID', created.getId()); } catch (e) {}
-    return created;
+    this._ss = ss;
+    return ss;
   },
 
   sheet: function (name) {
@@ -36,23 +51,46 @@ var Db = {
     return sh;
   },
 
-  headers: function (name) {
-    var sh = this.sheet(name);
-    var lastCol = sh.getLastColumn();
-    if (lastCol < 1) return [];
-    return sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
-  },
-
-  all: function (name) {
+  /**
+   * Reads a tab once per execution and caches its header row + raw values.
+   * `all()` rebuilds fresh row objects from this cache, so callers can never
+   * mutate shared state.
+   */
+  _raw: function (name) {
+    if (this._cache[name]) return this._cache[name];
     var sh = this.sheet(name);
     var last = sh.getLastRow();
     var lastCol = sh.getLastColumn();
-    if (last < 2 || lastCol < 1) return [];
-    var h = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
-    var values = sh.getRange(2, 1, last - 1, lastCol).getValues();
+    var headers = [];
+    var values = [];
+    if (last >= 1 && lastCol >= 1) {
+      headers = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+      if (last >= 2) values = sh.getRange(2, 1, last - 1, lastCol).getValues();
+    }
+    var raw = { headers: headers, values: values };
+    this._cache[name] = raw;
+    return raw;
+  },
+
+  /** Drops the cached read for one tab (or all tabs) after a write. */
+  _invalidate: function (name) {
+    if (name) delete this._cache[name];
+    else this._cache = {};
+  },
+
+  /** Clears every cached read. Call after writing to a sheet outside Db. */
+  clearCache: function () { this._cache = {}; },
+
+  headers: function (name) {
+    return this._raw(name).headers.slice();
+  },
+
+  all: function (name) {
+    var raw = this._raw(name);
+    var h = raw.headers;
     var out = [];
-    for (var i = 0; i < values.length; i++) {
-      var row = values[i];
+    for (var i = 0; i < raw.values.length; i++) {
+      var row = raw.values[i];
       if (row.join('') === '') continue;               // skip blank rows
       var o = { _row: i + 2 };
       for (var j = 0; j < h.length; j++) o[h[j]] = row[j];
@@ -75,16 +113,29 @@ var Db = {
     var h = this.headers(name);
     var row = h.map(function (k) { return obj[k] !== undefined && obj[k] !== null ? obj[k] : ''; });
     this.sheet(name).appendRow(row);
+    this._invalidate(name);
     return obj;
   },
 
+  /**
+   * Patches one row. A single field is written with one setValue(); a
+   * multi-field patch reads the row once and writes it back in a single
+   * setValues() call, instead of one setValue() per field (each of which is a
+   * separate Sheets round-trip).
+   */
   update: function (name, row, patch) {
     var sh = this.sheet(name);
     var h = this.headers(name);
-    Object.keys(patch).forEach(function (k) {
-      var col = h.indexOf(k);
-      if (col > -1) sh.getRange(row, col + 1).setValue(patch[k]);
-    });
+    var keys = Object.keys(patch).filter(function (k) { return h.indexOf(k) > -1; });
+    if (keys.length === 1) {
+      sh.getRange(row, h.indexOf(keys[0]) + 1).setValue(patch[keys[0]]);
+    } else if (keys.length > 1) {
+      var lastCol = Math.max(sh.getLastColumn(), h.length, 1);
+      var vals = sh.getRange(row, 1, 1, lastCol).getValues()[0];
+      keys.forEach(function (k) { vals[h.indexOf(k)] = patch[k]; });
+      sh.getRange(row, 1, 1, lastCol).setValues([vals]);
+    }
+    this._invalidate(name);
   },
 
   updateWhere: function (name, pred, patch) {
@@ -105,6 +156,7 @@ var Db = {
     // delete bottom-up so row indexes stay valid
     rows.sort(function (a, b) { return b._row - a._row; });
     rows.forEach(function (r) { Db.sheet(name).deleteRow(r._row); });
+    this._invalidate(name);
     return rows.length;
   },
 

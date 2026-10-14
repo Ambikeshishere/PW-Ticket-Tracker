@@ -33,6 +33,8 @@ const ctx = vm.createContext(globals);
 for (const f of FILES) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
 }
+// Keep local dev simple: send mail inline so OTPs print immediately.
+ctx.MAIL_QUEUE_ENABLED = false;
 ctx.setup();
 
 /* Print OTPs to the console instead of emailing them. */

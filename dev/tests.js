@@ -25,10 +25,11 @@ module.exports = function runTests(ctx, t) {
   section('Setup');
   ctx.setup();
   const tabNames = ctx.__test.ss.getSheets().map((s) => s.name);
-  eq('creates 11 tabs', tabNames.length, 11);
+  eq('creates 12 tabs', tabNames.length, 12);
   ok('has Users tab', tabNames.includes('Users'));
   ok('has Config tab', tabNames.includes('Config'));
   ok('has Approvals tab', tabNames.includes('Approvals'));
+  ok('has MailQueue tab', tabNames.includes('MailQueue'));
 
   const salt = ctx.cfg('SALT');
   ok('SALT is generated (not the placeholder)', salt && salt !== 'CHANGE-ME-please-set-a-random-salt');

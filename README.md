@@ -10,7 +10,7 @@ A ticket / request tracking portal for the PW Analytics team.
 
 > **Hinglish quick summary:** Front-end repo root me hai (`index.html`, `styles.css`,
 > `js/`). Back-end `backend/` me hai — ek Apps Script Web App jo JSON API deta hai
-> (`{api, token, payload}` → `{ok, data|error}`). Sheet ke 11 tabs database hain.
+> (`{api, token, payload}` → `{ok, data|error}`). Sheet ke 12 tabs database hain.
 > Login email-OTP se, session token hash banake `Sessions` tab me. Roles:
 > USER / CBA / ANALYST / ADMIN. Ticket raise → CBA assign → ANALYST kaam → USER
 > close. External approval email link se, reassignment CBA approval se. CBA apne
@@ -39,15 +39,15 @@ A ticket / request tracking portal for the PW Analytics team.
 |------|----------------|
 | `Api.gs` | Web-app entry points (`doGet`/`doPost`), the **JSON router** `handle()`, `PUBLIC_API` / `PRIVATE_API` maps, `api()` wrapper, `ensureSetup_()` lazy bootstrap, `clean_()`, sheet menu. |
 | `Config.gs` | `SHEET_ID`, `PORTAL_URL`, sheet names (`SHEETS`), roles, statuses, priorities, `DEFAULT_CONFIG`, `cfg()` / `cfgNum()` / `setCfg()`, `slaDueDate()`. |
-| `Db.gs` | The **only** code that touches the Sheet (`Db` object) + shared helpers (`withLock`, `now`, `addHours`, `toMs`, `sha256`, `randomToken`, `randomOtp`, `normEmail`, `escHtml`, `portalUrl`, `logErr`). |
+| `Db.gs` | The **only** code that touches the Sheet (`Db` object) + shared helpers (`withLock`, `now`, `addHours`, `toMs`, `sha256`, `randomToken`, `randomOtp`, `normEmail`, `escHtml`, `portalUrl`, `logErr`). Memoises the spreadsheet + per-tab reads for the whole request and batches row writes, so a request opens the Sheet **once** instead of once per read. |
 | `Setup.gs` | One-time provisioning: `portalHeaders_()`, `setup()`, `authorize()`, `seedConfig_()`, `seedAdmin_()`. |
 | `Auth.gs` | `Auth` object: signup, OTP request/verify, sessions, `requireSession`, `logout`, `publicUser`, `logActivity`. |
 | `Tickets.gs` | `Tickets` object: visibility, create, list, get, assign, status flow, close/reopen/rate, comments, dashboard. |
 | `Approvals.gs` | `Approvals` object: external email approval request, public `getInfo`, public `decide`, token lookup. |
 | `Reassign.gs` | `Reassign` object: analyst→analyst reassignment request, list, CBA/admin decision. |
 | `Admin.gs` | `Admin` object: public clusters, team workload, user/cluster CRUD, analytics, activity ranking, CSV export. |
-| `Triggers.gs` | Time-driven jobs: `setupTriggers()`, `dailyReminders()`, `hourlySlaCheck()`, `cleanupExpired()`. |
-| `Mail.gs` | All outbound email (`sendMail`, `shell`, `kvTable`, `button`, and every workflow mail). |
+| `Triggers.gs` | Time-driven jobs: `setupTriggers()`, `drainMailQueue()`, `dailyReminders()`, `hourlySlaCheck()`, `cleanupExpired()`. |
+| `Mail.gs` | All outbound email (`sendMail`, `shell`, `kvTable`, `button`, and every workflow mail). Workflow mail is **queued** (`MailQueue` tab) and sent by a 1-minute trigger; login OTPs send inline. |
 | `appsscript.json` | Manifest: timezone, V8 runtime, OAuth scopes, web-app access. |
 | `.clasp.json` | `clasp` project binding (`scriptId`). |
 
@@ -57,7 +57,7 @@ order, so all cross-file tables are built **inside functions** (e.g.
 
 ---
 
-## 2. Data model — the 11 tabs
+## 2. Data model — the 12 tabs
 
 Created automatically by `setup()` (or lazily on the first API call). Headers are
 defined in `Setup.gs` (`portalHeaders_()`).
@@ -107,6 +107,12 @@ defined in `Setup.gs` (`portalHeaders_()`).
 ### `ActivityLog`
 `Timestamp, Email, Role, Event, Meta`
 - High-level analytics events (`LOGIN`, `TICKET_CREATE`, `ASSIGN`, `COMMENT`, …).
+
+### `MailQueue`
+`QueueID, To, Subject, HtmlBody, ReplyTo, Status, Attempts, CreatedAt, SentAt, Error`
+- Outbound workflow email waiting to be sent. `Status` ∈ `PENDING | SENT | FAILED`.
+- Written by `sendMail()` (fast) and drained by the `drainMailQueue` trigger every
+  minute, so a user action never waits on Gmail. Login OTPs bypass the queue.
 
 ### `Config`
 `Key, Value`
@@ -364,8 +370,11 @@ Values are cached for 5 minutes (`CacheService`); `setCfg()` clears the cache.
 
 ## 10. Automation (`Triggers.gs`)
 
-Run `setupTriggers()` once. It installs three time-driven triggers:
+Run `setupTriggers()` once. It installs four time-driven triggers:
 
+- **`drainMailQueue`** (every minute) — sends any `PENDING` rows in the `MailQueue`
+  tab. Installed automatically on the first API call after deploy (guarded by a
+  script property), so queued workflow mail is delivered without manual setup.
 - **`dailyReminders`** (09:00 daily) — digest of unassigned tickets to each CBA and
   open tickets to each analyst.
 - **`hourlySlaCheck`** (hourly) — emails a warning when < 4h remain, and escalates
@@ -383,6 +392,12 @@ Every mail goes through `sendMail()`, which **never throws** — a failed mail r
 `shell()` (branded wrapper), `kvTable()` (key/value rows) and `button()` (CTA), and
 all user text is passed through `escHtml()`.
 
+**Speed:** `MailApp.sendEmail()` costs 1–2s per message and one action can trigger
+several, so workflow mail is written to the `MailQueue` tab and sent by the
+`drainMailQueue` trigger — the request returns immediately. Login OTPs pass
+`direct: true` and send inline so they arrive at once. If the queue tab is missing,
+`sendMail()` falls back to sending inline (nothing is ever lost).
+
 Mails: OTP, welcome, new-ticket→CBA, ticket-received→requester, assigned→analyst,
 assigned→requester, status change, comment, approval request, approval decision,
 reassign request, reassign decision, SLA warning, overdue.
@@ -393,6 +408,28 @@ Ticket mails link straight to the ticket: `button('Track it', ticketUrl(id))` �
 ticket drawer (after login, if the user isn't signed in yet). `portalUrl()` resolves
 the front-end URL as Config `PORTAL_URL` → the `FRONTEND_URL` constant in `Config.gs`
 → the Apps Script web-app URL, so links never fall back to the raw API endpoint.
+
+---
+
+## 11b. Performance
+
+Apps Script is slow when it talks to Google services repeatedly, so the hot paths
+avoid that:
+
+- **One spreadsheet open per request.** `Db.ss()` memoises the `SpreadsheetApp`
+  object for the whole execution. Previously every `Db.sheet()` call re-opened the
+  spreadsheet (~100–300ms each); a single `getTicket` did that ~7 times, `addComment`
+  ~10 times. Now it is **1**.
+- **One read per tab per request.** `Db._raw()` caches each tab's header row + values
+  and rebuilds fresh row objects from it, so repeated reads within a request are free.
+  The cache is dropped on every write (`Db._invalidate`).
+- **Batched writes.** `Db.update()` writes a single field with one `setValue()`, and a
+  multi-field patch with one read + one `setValues()` — instead of one `setValue()`
+  per field.
+- **Mail off the request path.** Workflow mail is queued and sent by a trigger (see
+  §11), so a create/assign/comment returns without waiting on Gmail.
+- **No duplicate dashboard fetch.** The UI reuses the dashboard response for the nav
+  badge and only refreshes it at most once every 15s.
 
 ---
 
@@ -455,7 +492,7 @@ spreadsheet on first run.
 - [ ] `Config` tab has a random `SALT`
 - [ ] Admin can log in via OTP
 - [ ] At least one cluster + one CBA + one analyst exist
-- [ ] `setupTriggers()` installed 3 triggers
+- [ ] `setupTriggers()` installed 4 triggers (or the mail-drain trigger auto-installed)
 
 ---
 
@@ -491,12 +528,12 @@ npm run serve     # static server on :8080
   `PropertiesService`, `CacheService`, `LockService`, `MailApp`, `Utilities`,
   `ScriptApp`, etc.
 - `dev/run.js` — loads the real `backend/*.gs` files into a `vm` context and runs
-  `dev/tests.js` (95 assertions: setup, signup, OTP, sessions, tickets, assignment,
+  `dev/tests.js` (96 assertions: setup, signup, OTP, sessions, tickets, assignment,
   requester self-assign/close, status flow, approvals, reassignment, close/rate,
   analytics, and the `api()` router including role denial).
-- `dev/backend-test.js` — drives the JSON API end-to-end (82 assertions, incl. CBA
+- `dev/backend-test.js` — drives the JSON API end-to-end (86 assertions, incl. CBA
   analyst management, admin cross-cluster assign, USER self-assign + close, the
-  setup-version guard, and email deep links).
+  setup-version guard, email deep links, and the mail queue).
 - `dev/web-test.js` — exercises the static front-end against `js/api.local.js`
   (90 assertions).
 - `dev/check-client.js` — verifies every `call('name')` in `js/ui.js` has a route in
