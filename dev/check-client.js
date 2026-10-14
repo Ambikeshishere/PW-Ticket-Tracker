@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.join(__dirname, '..');
+const ROOT = path.join(__dirname, '..', 'appsscript');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 
 let fail = 0;
