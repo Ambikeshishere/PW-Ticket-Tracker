@@ -277,6 +277,36 @@ module.exports = function runTests(ctx, t) {
   ok('CSV export has header + rows', csv.csv.split('\n').length >= 2);
   ok('CSV filename', csv.filename === 'tickets.csv');
 
+  /* ===================== shared raw cache ===================== */
+  section('Shared raw cache');
+  // Simulate a fresh execution: drop per-execution state, keep the shared cache.
+  const newExec = () => { ctx.Db._cache = {}; ctx.Db._vers = {}; };
+
+  // A warm read is served from the shared cache without touching the sheet.
+  ctx.Db._bump(ctx.SHEETS.CLUSTERS);          // force the next read to miss
+  newExec();
+  let sheetReads = 0;
+  const origRead = ctx.Db._readSheet;
+  ctx.Db._readSheet = function (n) { sheetReads++; return origRead.call(this, n); };
+  ctx.Db.all(ctx.SHEETS.CLUSTERS);            // miss -> reads the sheet, caches it
+  newExec();
+  ctx.Db.all(ctx.SHEETS.CLUSTERS);            // hit -> no sheet read
+  ctx.Db._readSheet = origRead;
+  eq('warm read skips the sheet', sheetReads, 1);
+
+  // A write invalidates the shared cache for the next execution.
+  newExec();
+  const beforeCount = ctx.Db.all(ctx.SHEETS.USERS).length;
+  ctx.Db.insert(ctx.SHEETS.USERS, {
+    UserID: 'U-CACHE', Name: 'Cache Probe', Email: 'cache-probe@pw.live',
+    Role: 'USER', Status: 'ACTIVE',
+  });
+  newExec();
+  eq('write is visible to a new execution', ctx.Db.all(ctx.SHEETS.USERS).length, beforeCount + 1);
+  ctx.Db.deleteWhere(ctx.SHEETS.USERS, (u) => u.Email === 'cache-probe@pw.live');
+  newExec();
+  eq('delete is visible to a new execution', ctx.Db.all(ctx.SHEETS.USERS).length, beforeCount);
+
   /* ============================ router =========================== */
   section('api() router');
   const pub = ctx.api('getClusters', null, {});

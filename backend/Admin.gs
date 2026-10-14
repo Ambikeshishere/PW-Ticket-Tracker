@@ -232,7 +232,7 @@ var Admin = {
       byPriority[t.Priority] = (byPriority[t.Priority] || 0) + 1;
       byCluster[t.ClusterID || '—'] = (byCluster[t.ClusterID || '—'] || 0) + 1;
       byCategory[t.Category || 'Other'] = (byCategory[t.Category || 'Other'] || 0) + 1;
-      var day = String(t.CreatedAt || '').slice(0, 10);
+      var day = dayKey(t.CreatedAt);
       if (day) trend[day] = (trend[day] || 0) + 1;
       if (st === 'RESOLVED' || st === 'CLOSED') resolved++;
       if (t.DueAt && toMs(t.DueAt) < Date.now() && st !== 'CLOSED' && st !== 'RESOLVED') overdue++;

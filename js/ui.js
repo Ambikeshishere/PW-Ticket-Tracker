@@ -43,12 +43,55 @@
   function debounce(fn, ms) { var t; return function () { var a = arguments, self = this; clearTimeout(t); t = setTimeout(function () { fn.apply(self, a); }, ms); }; }
 
   /* --------------------------- api bridge ---------------------------- */
-  function call(name, payload) {
-    return API.call(name, state.token, payload || {}).then(function (res) {
-      if (res.ok) return res.data;
+  /* Response cache. Apps Script answers in ~2.4s, so every view change used to
+   * show a spinner. Read responses are cached briefly and served instantly on
+   * repeat visits; any write clears the cache so the next read is fresh. */
+  var READS = {
+    me: 1, getClusters: 1, dashboard: 1, listTickets: 1, getTicket: 1,
+    myAnalysts: 1, listReassign: 1, teamWorkload: 1, clusterAnalysts: 1,
+    adminUsers: 1, adminClusters: 1, adminAnalytics: 1, adminActivity: 1,
+    adminMailQueue: 1, adminExportCsv: 1
+  };
+  var READ_TTL = 30000;
+  var _cache = {}, _inflight = {};
+
+  function cacheKey(name, payload) { return name + '|' + JSON.stringify(payload || {}); }
+  function clearCache() { _cache = {}; }
+
+  function call(name, payload, opts) {
+    payload = payload || {};
+    opts = opts || {};
+    var isRead = !!READS[name];
+    var key = cacheKey(name, payload);
+    if (isRead) {
+      if (!opts.fresh) {
+        var hit = _cache[key];
+        if (hit && Date.now() - hit.at < READ_TTL) return Promise.resolve(hit.data);
+      }
+      if (_inflight[key]) return _inflight[key];   // collapse duplicate reads
+    }
+    var p = API.call(name, state.token, payload).then(function (res) {
+      if (isRead) delete _inflight[key];
+      if (res.ok) {
+        if (isRead) _cache[key] = { at: Date.now(), data: res.data };
+        else clearCache();                          // a write invalidates reads
+        return res.data;
+      }
       if (res.error === 'SESSION_EXPIRED') { doLogout(true); throw new Error('Session expired'); }
       throw new Error(res.error || 'Request failed');
-    });
+    }, function (e) { if (isRead) delete _inflight[key]; throw e; });
+    if (isRead) _inflight[key] = p;
+    return p;
+  }
+
+  /* Warm the views people open most, so the first click is instant. */
+  function prefetch() {
+    setTimeout(function () {
+      call('listTickets', state.filters).catch(function () {});
+      if (state.user.role === 'CBA' || state.user.role === 'ADMIN') {
+        call('myAnalysts', {}).catch(function () {});
+      }
+    }, 400);
   }
 
   /* ------------------------------ theme ------------------------------ */
@@ -168,6 +211,7 @@
   }
   function doLogout(silent) {
     if (!silent && state.token) { try { API.call('logout', state.token, { token: state.token }); } catch (e) {} }
+    clearCache();
     localStorage.removeItem('pw_token');
     state.token = null; state.user = null;
     location.hash = '';
@@ -183,6 +227,7 @@
     $('btnMenu').onclick = function () { $('sidebar').classList.toggle('open'); };
     renderNav();
     setView('dashboard');
+    prefetch();
     if (state.pendingTicket) {
       var id = state.pendingTicket;
       state.pendingTicket = null;

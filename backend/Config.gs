@@ -52,6 +52,14 @@ var SETUP_VERSION = 3;
  */
 var SHEET_ID = '';
 
+/**
+ * Shared raw-read cache (Db.gs). Apps Script spends ~1-2s just opening the
+ * spreadsheet, so each tab's header+values are kept in CacheService and only
+ * re-read after a write. Set to false to disable (reads then always hit the
+ * sheet) — useful if a stale read is ever suspected.
+ */
+var RAW_CACHE_ENABLED = true;
+
 var TICKET_STATUSES = [
   'NEW', 'ASSIGNED', 'IN_PROGRESS', 'PENDING_APPROVAL',
   'ON_HOLD', 'RESOLVED', 'CLOSED', 'REOPENED'
