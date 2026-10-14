@@ -93,6 +93,99 @@ var Admin = {
     return { email: email, created: true };
   },
 
+  /* ------------------------ cluster analysts ----------------------- */
+  /**
+   * Analysts a CBA manages in their own cluster (admins see every analyst).
+   * This is the roster behind the "My Analysts" screen.
+   */
+  clusterAnalysts: function (user) {
+    var role = String(user.Role).toUpperCase();
+    return Db.all(SHEETS.USERS).filter(function (u) {
+      if (String(u.Role).toUpperCase() !== 'ANALYST') return false;
+      if (role === 'ADMIN') return true;
+      return String(u.ClusterID) === String(user.ClusterID);
+    }).map(function (u) {
+      return {
+        email: normEmail(u.Email), name: u.Name || '', phone: u.Phone || '',
+        department: u.Department || '', clusterId: u.ClusterID || '',
+        reportsTo: normEmail(u.ReportsTo), status: String(u.Status || 'ACTIVE').toUpperCase(),
+        lastLoginAt: u.LastLoginAt || ''
+      };
+    }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+  },
+
+  /**
+   * Adds or updates an ANALYST in the acting CBA's cluster. A CBA can only
+   * touch analysts in their own cluster and cannot change a user's role; an
+   * admin may target any cluster.
+   */
+  saveAnalyst: function (user, p) {
+    var a = p.analyst || {};
+    var email = normEmail(a.email);
+    if (!email) throw new Error('Email is required.');
+    var actorRole = String(user.Role).toUpperCase();
+    var clusterId = actorRole === 'ADMIN'
+      ? String(a.clusterId || user.ClusterID || ADMIN_CLUSTER_ID)
+      : String(user.ClusterID);
+    if (!clusterId) throw new Error('You are not assigned to a cluster yet.');
+    var status = String(a.status || 'ACTIVE').toUpperCase() === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE';
+
+    var existing = Db.findOne(SHEETS.USERS, function (x) { return normEmail(x.Email) === email; });
+
+    if (existing) {
+      if (String(existing.Role).toUpperCase() !== 'ANALYST') {
+        throw new Error('That email belongs to a ' + String(existing.Role).toUpperCase() +
+          ', not an analyst.');
+      }
+      if (actorRole !== 'ADMIN' && String(existing.ClusterID) !== String(user.ClusterID)) {
+        throw new Error('That analyst is not in your cluster.');
+      }
+      var statusChanged = String(existing.Status || 'ACTIVE').toUpperCase() !== status;
+      Db.update(SHEETS.USERS, existing._row, {
+        Name: a.name || existing.Name,
+        Phone: a.phone !== undefined ? a.phone : existing.Phone,
+        Department: a.department !== undefined ? a.department : existing.Department,
+        ClusterID: clusterId,
+        ReportsTo: a.reportsTo !== undefined ? normEmail(a.reportsTo) : existing.ReportsTo,
+        Status: status
+      });
+      if (statusChanged) Auth.killSessions(email);
+      Auth.logActivity(user, 'ANALYST_UPDATED', email + ' (' + clusterId + ')');
+      return { email: email, updated: true };
+    }
+
+    if (!a.name || !String(a.name).trim()) throw new Error('Name is required for a new analyst.');
+    var fresh = {
+      UserID: withLock(function () { return Db.nextId('U-', SHEETS.USERS, 'UserID'); }),
+      Name: String(a.name).trim(), Email: email, Phone: a.phone || '',
+      Department: a.department || '', DefaultPriority: 'Medium',
+      Role: ROLES.ANALYST, ClusterID: clusterId,
+      ReportsTo: normEmail(a.reportsTo) || normEmail(user.Email),
+      Status: status, CreatedAt: now().toISOString(), LastLoginAt: ''
+    };
+    Db.insert(SHEETS.USERS, fresh);
+    Auth.logActivity(user, 'ANALYST_CREATED', email + ' (' + clusterId + ')');
+    try { mailWelcome(email, fresh.Name); } catch (e) { logErr('analystWelcomeMail', e); }
+    return { email: email, created: true };
+  },
+
+  /** Removes (deactivates) an analyst from the acting CBA's cluster. */
+  removeAnalyst: function (user, p) {
+    var email = normEmail(p.email);
+    if (!email) throw new Error('Email is required.');
+    var target = Db.findOne(SHEETS.USERS, function (x) { return normEmail(x.Email) === email; });
+    if (!target) throw new Error('Analyst not found.');
+    if (String(target.Role).toUpperCase() !== 'ANALYST') throw new Error('That user is not an analyst.');
+    var actorRole = String(user.Role).toUpperCase();
+    if (actorRole !== 'ADMIN' && String(target.ClusterID) !== String(user.ClusterID)) {
+      throw new Error('That analyst is not in your cluster.');
+    }
+    Db.update(SHEETS.USERS, target._row, { Status: 'INACTIVE' });
+    Auth.killSessions(email);
+    Auth.logActivity(user, 'ANALYST_REMOVED', email);
+    return { email: email, removed: true };
+  },
+
   /* ---------------------------- clusters --------------------------- */
   listClusters: function () {
     return Db.all(SHEETS.CLUSTERS).map(function (c) {

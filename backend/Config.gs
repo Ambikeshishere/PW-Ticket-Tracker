@@ -23,6 +23,13 @@ var SHEETS = {
 var ROLES = { USER: 'USER', CBA: 'CBA', ANALYST: 'ANALYST', ADMIN: 'ADMIN' };
 
 /**
+ * The built-in "Admin" cluster. The admin account lives here by default and
+ * other people can be added to it. It is created automatically by setup().
+ */
+var ADMIN_CLUSTER_ID = 'CL-ADMIN';
+var ADMIN_CLUSTER_NAME = 'Admin';
+
+/**
  * Optional: the ID of the Google Sheet that stores the data.
  * - If this script is bound to a Sheet (Extensions ▸ Apps Script), leave it ''.
  * - If this is a standalone script, either paste the Sheet ID here, or just run

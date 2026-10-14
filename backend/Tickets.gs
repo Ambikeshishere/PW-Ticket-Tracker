@@ -231,9 +231,9 @@ var Tickets = {
   /* ---------------------------- assign ----------------------------- */
   /**
    * Resolves who a ticket may be assigned to. Allowed targets:
-   *   - an ACTIVE ANALYST in the ticket's cluster (CBA/admin hand-off), or
+   *   - an ACTIVE ANALYST in the ticket's cluster (CBA hand-off), or
    *   - the acting CBA themselves (self-assign / "take this ticket"), or
-   *   - for an ADMIN, any ACTIVE CBA/ANALYST in the cluster.
+   *   - for an ADMIN, any ACTIVE CBA/ANALYST in ANY cluster.
    * Throws a friendly error otherwise.
    */
   resolveAssignee_: function (user, t, email) {
@@ -246,12 +246,14 @@ var Tickets = {
     var isSelf = normEmail(target.Email) === normEmail(user.Email);
     var sameCluster = String(target.ClusterID) === String(t.ClusterID);
 
+    // An admin can hand a ticket to any active worker, in any cluster.
+    if (actorRole === 'ADMIN' && (role === 'CBA' || role === 'ANALYST')) return target;
+
     if (role === 'ANALYST') {
       if (!sameCluster) throw new Error('That analyst is not in this ticket\'s cluster.');
       return target;
     }
     if (role === 'CBA' && isSelf && sameCluster) return target;   // CBA takes it themselves
-    if (actorRole === 'ADMIN' && (role === 'CBA' || role === 'ANALYST') && sameCluster) return target;
     throw new Error('Assign to an Associate Analyst in this cluster, or take it yourself.');
   },
 
@@ -282,20 +284,34 @@ var Tickets = {
     return Tickets.publicTicket(fresh);
   },
 
-  /** Analysts a CBA/admin can assign to (same cluster). A CBA also gets themselves. */
+  /**
+   * People a ticket can be handed to. A CBA sees the analysts in their cluster
+   * (plus themselves); an admin sees every active CBA/analyst in every cluster.
+   */
   myAnalysts: function (user) {
     var role = String(user.Role).toUpperCase();
+    var clusters = {};
+    Db.all(SHEETS.CLUSTERS).forEach(function (c) { clusters[String(c.ClusterID)] = c.ClusterName; });
+
     var list = Db.all(SHEETS.USERS).filter(function (u) {
-      if (String(u.Role).toUpperCase() !== 'ANALYST') return false;
       if (String(u.Status).toUpperCase() !== 'ACTIVE') return false;
-      if (role === 'ADMIN') return true;
+      var r = String(u.Role).toUpperCase();
+      if (role === 'ADMIN') return r === 'ANALYST' || r === 'CBA';
+      if (r !== 'ANALYST') return false;
       return String(u.ClusterID) === String(user.ClusterID);
     }).map(function (u) {
-      return { email: normEmail(u.Email), name: u.Name, clusterId: u.ClusterID };
+      return {
+        email: normEmail(u.Email), name: u.Name, role: String(u.Role).toUpperCase(),
+        clusterId: u.ClusterID || '', clusterName: clusters[String(u.ClusterID)] || u.ClusterID || ''
+      };
     });
     // A CBA can take a ticket themselves, so offer "me" as an assignee too.
     if (role === 'CBA') {
-      list.unshift({ email: normEmail(user.Email), name: user.Name + ' (me)', clusterId: user.ClusterID, self: true });
+      list.unshift({
+        email: normEmail(user.Email), name: user.Name + ' (me)', role: 'CBA',
+        clusterId: user.ClusterID || '',
+        clusterName: clusters[String(user.ClusterID)] || user.ClusterID || '', self: true
+      });
     }
     return list;
   },

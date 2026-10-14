@@ -88,6 +88,7 @@ function setup() {
   if (def && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
 
   seedConfig_();
+  seedAdminCluster_();
   seedAdmin_();
 
   try { ss.toast('Ticket Portal setup complete.', 'Setup', 5); } catch (e) {}
@@ -130,11 +131,33 @@ function seedConfig_() {
   invalidateCfg_();
 }
 
+/** Ensures the built-in "Admin" cluster exists. */
+function seedAdminCluster_() {
+  var existing = Db.findOne(SHEETS.CLUSTERS, function (c) {
+    return String(c.ClusterID) === ADMIN_CLUSTER_ID;
+  });
+  if (existing) return existing;
+  var cluster = {
+    ClusterID: ADMIN_CLUSTER_ID,
+    ClusterName: ADMIN_CLUSTER_NAME,
+    CBA_Email: normEmail(cfg('ADMIN_EMAIL')),
+    Status: 'ACTIVE'
+  };
+  Db.insert(SHEETS.CLUSTERS, cluster);
+  return cluster;
+}
+
 /** Ensures the admin account exists. */
 function seedAdmin_() {
   var email = normEmail(cfg('ADMIN_EMAIL'));
   var existing = Db.findOne(SHEETS.USERS, function (u) { return normEmail(u.Email) === email; });
-  if (existing) return existing;
+  if (existing) {
+    // Keep the admin in the built-in Admin cluster (repairs older installs).
+    if (String(existing.ClusterID) !== ADMIN_CLUSTER_ID) {
+      Db.update(SHEETS.USERS, existing._row, { ClusterID: ADMIN_CLUSTER_ID });
+    }
+    return existing;
+  }
   var admin = {
     UserID: Db.nextId('U-', SHEETS.USERS, 'UserID'),
     Name: 'Ambikesh Srivastava',
@@ -143,7 +166,7 @@ function seedAdmin_() {
     Department: 'Analytics',
     DefaultPriority: 'Medium',
     Role: ROLES.ADMIN,
-    ClusterID: '',
+    ClusterID: ADMIN_CLUSTER_ID,
     ReportsTo: '',
     Status: 'ACTIVE',
     CreatedAt: now().toISOString(),
