@@ -97,6 +97,7 @@ class Spreadsheet {
 function buildGlobals() {
   const ss = new Spreadsheet();
   const cache = new Map();
+  const scriptProps = new Map();
   const sentMails = [];
   const logs = [];
 
@@ -111,14 +112,11 @@ function buildGlobals() {
 
     /* script properties */
     PropertiesService: {
-      getScriptProperties: () => {
-        const store = new Map();
-        return {
-          getProperty: (k) => (store.has(k) ? store.get(k) : null),
-          setProperty: (k, v) => { store.set(k, String(v)); },
-          deleteProperty: (k) => { store.delete(k); },
-        };
-      },
+      getScriptProperties: () => ({
+        getProperty: (k) => (scriptProps.has(k) ? scriptProps.get(k) : null),
+        setProperty: (k, v) => { scriptProps.set(k, String(v)); },
+        deleteProperty: (k) => { scriptProps.delete(k); },
+      }),
     },
 
     /* cache */

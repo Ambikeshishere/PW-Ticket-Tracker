@@ -242,6 +242,11 @@ API call runs `setup()` once (guarded by the script property `SETUP_DONE` + a
 `LockService` lock), so the Sheet is provisioned automatically — nobody has to
 open the editor just to run `setup()`.
 
+`ensureSetup_()` also records `SETUP_VERSION` (from `Config.gs`). When that constant
+is bumped — e.g. a new built-in seed like the Admin cluster — the next API call
+re-runs the idempotent `setup()` once for existing installs, so new seeds reach
+already-provisioned Sheets without a manual step.
+
 ---
 
 ## 6. Ticket lifecycle (`Tickets.gs`)
@@ -461,11 +466,11 @@ npm run serve     # static server on :8080
   `PropertiesService`, `CacheService`, `LockService`, `MailApp`, `Utilities`,
   `ScriptApp`, etc.
 - `dev/run.js` — loads the real `backend/*.gs` files into a `vm` context and runs
-  `dev/tests.js` (83 assertions: setup, signup, OTP, sessions, tickets, assignment,
+  `dev/tests.js` (85 assertions: setup, signup, OTP, sessions, tickets, assignment,
   status flow, approvals, reassignment, close/rate, analytics, and the `api()` router
   including role denial).
-- `dev/backend-test.js` — drives the JSON API end-to-end (66 assertions, incl. CBA
-  analyst management + admin cross-cluster assign).
+- `dev/backend-test.js` — drives the JSON API end-to-end (71 assertions, incl. CBA
+  analyst management, admin cross-cluster assign, and the setup-version guard).
 - `dev/web-test.js` — exercises the static front-end against `js/api.local.js`
   (84 assertions).
 - `dev/check-client.js` — verifies every `call('name')` in `js/ui.js` has a route in

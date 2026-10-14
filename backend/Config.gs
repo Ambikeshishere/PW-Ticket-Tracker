@@ -30,6 +30,13 @@ var ADMIN_CLUSTER_ID = 'CL-ADMIN';
 var ADMIN_CLUSTER_NAME = 'Admin';
 
 /**
+ * Bump this whenever setup() gains a new idempotent seed (e.g. a new built-in
+ * cluster). ensureSetup_() re-runs setup() once for existing installs whose
+ * stored version is older, so new seeds reach already-provisioned Sheets.
+ */
+var SETUP_VERSION = 2;
+
+/**
  * Optional: the ID of the Google Sheet that stores the data.
  * - If this script is bound to a Sheet (Extensions ▸ Apps Script), leave it ''.
  * - If this is a standalone script, either paste the Sheet ID here, or just run

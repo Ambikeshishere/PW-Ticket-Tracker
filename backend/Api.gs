@@ -77,14 +77,18 @@ function api(name, token, payload) {
  */
 function ensureSetup_() {
   var props = PropertiesService.getScriptProperties();
-  if (props.getProperty('SETUP_DONE') === '1') return;
+  var done = props.getProperty('SETUP_DONE') === '1' &&
+    props.getProperty('SETUP_VERSION') === String(SETUP_VERSION);
+  if (done) return;
 
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) { /* proceed anyway */ }
   try {
-    if (props.getProperty('SETUP_DONE') === '1') return;
+    if (props.getProperty('SETUP_DONE') === '1' &&
+        props.getProperty('SETUP_VERSION') === String(SETUP_VERSION)) return;
     setup();
     props.setProperty('SETUP_DONE', '1');
+    props.setProperty('SETUP_VERSION', String(SETUP_VERSION));
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }

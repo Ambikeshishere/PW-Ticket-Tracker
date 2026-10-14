@@ -53,6 +53,8 @@ t.section('setup + seed');
 ctx.setup();
 t.ok('setup() runs without throwing', true);
 t.ok('admin seeded', ctx.Db.all(ctx.SHEETS.USERS).length >= 1, 'got ' + ctx.Db.all(ctx.SHEETS.USERS).length);
+t.ok('Admin cluster seeded', ctx.Db.all(ctx.SHEETS.CLUSTERS).some((c) => String(c.ClusterID) === 'CL-ADMIN'));
+t.ok('admin lives in the Admin cluster', ctx.Db.all(ctx.SHEETS.USERS).some((u) => String(u.Role) === 'ADMIN' && String(u.ClusterID) === 'CL-ADMIN'));
 
 /* ------------------------------ envelope ----------------------------- */
 t.section('response envelope');
@@ -63,6 +65,15 @@ t.ok('unknown api -> error string', typeof unknown.error === 'string' && unknown
 const emptyClusters = call('getClusters', '', {});
 t.eq('public getClusters -> ok:true', emptyClusters.ok, true);
 t.ok('getClusters returns an array', Array.isArray(emptyClusters.data));
+
+/* --------------------------- setup version guard --------------------- */
+t.section('setup version guard');
+const props = ctx.PropertiesService.getScriptProperties();
+t.eq('SETUP_DONE recorded after first call', props.getProperty('SETUP_DONE'), '1');
+t.eq('SETUP_VERSION recorded', props.getProperty('SETUP_VERSION'), String(ctx.SETUP_VERSION));
+props.deleteProperty('SETUP_VERSION');
+call('getClusters', '', {});
+t.eq('stale version re-runs setup()', props.getProperty('SETUP_VERSION'), String(ctx.SETUP_VERSION));
 
 /* ------------------------------- auth -------------------------------- */
 t.section('auth flow (no OTP leak)');

@@ -33,6 +33,8 @@ module.exports = function runTests(ctx, t) {
   const salt = ctx.cfg('SALT');
   ok('SALT is generated (not the placeholder)', salt && salt !== 'CHANGE-ME-please-set-a-random-salt');
   ok('admin account seeded', !!rawUser(ADMIN_EMAIL));
+  ok('Admin cluster seeded', !!ctx.Db.findOne(ctx.SHEETS.CLUSTERS, (c) => String(c.ClusterID) === 'CL-ADMIN'));
+  eq('admin lives in the Admin cluster', String(rawUser(ADMIN_EMAIL).ClusterID), 'CL-ADMIN');
 
   const admin = rawUser(ADMIN_EMAIL);
   admin.Role = 'ADMIN';
