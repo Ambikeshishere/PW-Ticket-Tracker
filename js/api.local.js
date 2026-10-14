@@ -164,11 +164,13 @@
   /* ============================= Tickets =========================== */
   var Tickets = {
     canSee: function (user, t) {
+      // Whoever raised the ticket always sees it, whatever their role.
+      if (normEmail(t.RaisedByEmail) === normEmail(user.Email)) return true;
       switch (String(user.Role).toUpperCase()) {
         case 'ADMIN': return true;
         case 'CBA': return String(t.ClusterID) === String(user.ClusterID);
         case 'ANALYST': return normEmail(t.AnalystEmail) === normEmail(user.Email);
-        case 'USER': return normEmail(t.RaisedByEmail) === normEmail(user.Email);
+        case 'USER': return false;
         default: return false;
       }
     },
@@ -287,6 +289,8 @@
       var actorRole = String(user.Role).toUpperCase();
       var isSelf = normEmail(target.Email) === normEmail(user.Email);
       var sameCluster = String(target.ClusterID) === String(t.ClusterID);
+      // Whoever raised the ticket can always take it themselves, whatever their role.
+      if (isSelf && normEmail(t.RaisedByEmail) === normEmail(user.Email)) return target;
       // An admin can hand a ticket to any active worker, in any cluster.
       if (actorRole === 'ADMIN' && (role === 'CBA' || role === 'ANALYST')) return target;
       if (role === 'ANALYST') {
@@ -333,13 +337,12 @@
           clusterId: u.ClusterID || '', clusterName: clusters[String(u.ClusterID)] || u.ClusterID || ''
         };
       });
-      if (role === 'CBA') {
-        list.unshift({
-          email: normEmail(user.Email), name: user.Name + ' (me)', role: 'CBA',
-          clusterId: user.ClusterID || '',
-          clusterName: clusters[String(user.ClusterID)] || user.ClusterID || '', self: true
-        });
-      }
+      // Anyone can take a ticket they raised themselves, so offer "me" too.
+      list.unshift({
+        email: normEmail(user.Email), name: user.Name + ' (me)', role: role,
+        clusterId: user.ClusterID || '',
+        clusterName: clusters[String(user.ClusterID)] || user.ClusterID || '', self: true
+      });
       return list;
     },
 
@@ -366,9 +369,10 @@
 
     close: function (user, p) {
       var t = Tickets.mustOwn(user, p.ticketId);
-      if (String(t.Status).toUpperCase() !== 'RESOLVED') fail('Only a resolved ticket can be closed.');
+      var st = String(t.Status).toUpperCase();
+      if (st === 'CLOSED') fail('This ticket is already closed.');
       Store.update('tickets', t, { Status: 'CLOSED', ClosedAt: U.now(), UpdatedAt: U.now() });
-      Tickets.log(t.TicketID, user, 'CLOSED', 'RESOLVED', 'CLOSED', p.note || '');
+      Tickets.log(t.TicketID, user, 'CLOSED', st, 'CLOSED', p.note || '');
       return Tickets.publicTicket(t);
     },
 
@@ -839,12 +843,12 @@
     listTickets: { fn: function (u, p) { return Tickets.list(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
     getTicket: { fn: function (u, p) { return Tickets.get(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
     addComment: { fn: function (u, p) { return Tickets.addComment(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
-    assignTicket: { fn: function (u, p) { return Tickets.assign(u, p); }, roles: ['CBA', 'ADMIN'] },
+    assignTicket: { fn: function (u, p) { return Tickets.assign(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
     updateStatus: { fn: function (u, p) { return Tickets.updateStatus(u, p); }, roles: ['ANALYST', 'CBA', 'ADMIN'] },
-    closeTicket: { fn: function (u, p) { return Tickets.close(u, p); }, roles: ['USER', 'ADMIN'] },
-    reopenTicket: { fn: function (u, p) { return Tickets.reopen(u, p); }, roles: ['USER', 'ADMIN'] },
-    rateTicket: { fn: function (u, p) { return Tickets.rate(u, p); }, roles: ['USER'] },
-    myAnalysts: { fn: function (u) { return Tickets.myAnalysts(u); }, roles: ['CBA', 'ADMIN', 'ANALYST'] },
+    closeTicket: { fn: function (u, p) { return Tickets.close(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
+    reopenTicket: { fn: function (u, p) { return Tickets.reopen(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
+    rateTicket: { fn: function (u, p) { return Tickets.rate(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
+    myAnalysts: { fn: function (u) { return Tickets.myAnalysts(u); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
     requestApproval: { fn: function (u, p) { return Approvals.request(u, p); }, roles: ['CBA', 'ADMIN'] },
     requestReassign: { fn: function (u, p) { return Reassign.request(u, p); }, roles: ['ANALYST'] },
     listReassign: { fn: function (u) { return Reassign.list(u); }, roles: ['CBA', 'ADMIN'] },

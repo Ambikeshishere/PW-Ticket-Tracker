@@ -206,6 +206,19 @@ const cbaAssignOnCreate = call('createTicket', cbaToken, {
 t.eq('CBA assignTo on create -> ASSIGNED', cbaAssignOnCreate.data && cbaAssignOnCreate.data.status, 'ASSIGNED');
 t.eq('CBA assignTo on create sets analyst', cbaAssignOnCreate.data && cbaAssignOnCreate.data.analystEmail, 'analyst@pw.live');
 
+/* -------------------- USER self-assign + mark done ------------------- */
+t.section('USER self-assign + close');
+const userAnalysts = call('myAnalysts', userToken, {});
+t.ok('USER myAnalysts includes self', Array.isArray(userAnalysts.data) && userAnalysts.data.some((a) => a.self === true && a.email === 'riya@pw.live'));
+const userSelfAssign = call('assignTicket', userToken, { ticketId, analystEmail: 'riya@pw.live' });
+t.eq('USER self-assign -> ok:true', userSelfAssign.ok, true);
+t.eq('USER self-assign sets analyst', userSelfAssign.data && userSelfAssign.data.analystEmail, 'riya@pw.live');
+t.eq('USER self-assign -> ASSIGNED', userSelfAssign.data && userSelfAssign.data.status, 'ASSIGNED');
+const userClose = call('closeTicket', userToken, { ticketId });
+t.eq('USER marks done -> CLOSED', userClose.data && userClose.data.status, 'CLOSED');
+const userCloseAgain = call('closeTicket', userToken, { ticketId });
+t.eq('cannot close twice -> ok:false', userCloseAgain.ok, false);
+
 /* --------------------------- CBA analyst management ------------------ */
 t.section('CBA analyst management');
 const roster = call('clusterAnalysts', cbaToken, {});

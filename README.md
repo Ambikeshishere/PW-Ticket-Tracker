@@ -120,14 +120,14 @@ defined in `Setup.gs` (`portalHeaders_()`).
 |---|:--:|:--:|:--:|:--:|
 | Sign up (self) | ✅ | – | – | – |
 | Raise a ticket | ✅ | – | ✅ | ✅ |
-| See tickets | own only | assigned only | own cluster | all |
+| See tickets | own only | assigned + own | cluster + own | all |
 | Assign analyst | – | – | ✅ own cluster | ✅ any cluster |
-| Take a ticket (self-assign) | – | – | ✅ | – |
+| Take a ticket (self-assign) | ✅ own | ✅ own | ✅ own | ✅ own/any |
 | Move status | – | own tickets | cluster | ✅ |
 | Request external approval | – | – | ✅ | ✅ |
 | Request reassignment | – | own tickets | – | – |
 | Approve reassignment | – | – | ✅ | ✅ |
-| Close / reopen / rate | own | – | – | ✅ |
+| Close / mark done / reopen / rate | ✅ own | ✅ own | ✅ own | ✅ any |
 | Manage cluster analysts | – | – | ✅ own cluster | ✅ any cluster |
 | Manage users / clusters | – | – | – | ✅ |
 | Analytics / activity / CSV | – | – | – | ✅ |
@@ -146,11 +146,27 @@ ticket themselves** (self-assign), and **hand it to an analyst** in their cluste
 - `assignTicket` accepts either an ACTIVE ANALYST in the ticket's cluster **or the
   acting CBA themselves** (`Tickets.resolveAssignee_`). An ADMIN may assign to any
   ACTIVE CBA/ANALYST in **any** cluster.
-- `myAnalysts` returns the cluster's analysts **plus the CBA themselves** (flagged
-  `self: true`), so the assign dropdown offers "take it myself". For an ADMIN it
-  returns every ACTIVE CBA/ANALYST across all clusters.
+- `myAnalysts` returns the cluster's analysts **plus the acting user themselves**
+  (flagged `self: true`), so the assign dropdown offers "take it myself". For an ADMIN
+  it returns every ACTIVE CBA/ANALYST across all clusters.
 - Once self-assigned, the CBA sees the same work actions as an analyst
   (Start / Hold / Resolve) and can close/reopen/rate tickets they raised.
+
+### Any requester can take & close their own ticket
+Whoever raised a ticket owns it end-to-end, whatever their role:
+
+- **Sees it:** `Tickets.canSee` returns `true` for the requester before any role
+  check, so an `ANALYST`/`CBA` can open a ticket they raised even before it is
+  assigned to them.
+- **Takes it:** `Tickets.resolveAssignee_` lets the requester self-assign their own
+  ticket (any role). `assignTicket` and `myAnalysts` are open to all four roles, so
+  the ticket drawer's **"Take it myself"** button works for a `USER` and an `ANALYST`
+  too — not just a `CBA`.
+- **Closes it:** `Tickets.close` (via `mustOwn`) lets the requester close their own
+  ticket from **any non-closed status** — no `RESOLVED` step required. The drawer
+  labels the action **"Accept & close"** when the ticket is already resolved, and
+  **"Mark as done"** otherwise. `closeTicket`, `reopenTicket`, and `rateTicket` are
+  open to all four roles (ownership is still enforced by `mustOwn`).
 
 ### Admin cluster & analyst management
 - `setup()` seeds a built-in **Admin** cluster (`CL-ADMIN`) and puts the seeded
@@ -263,8 +279,9 @@ NEW ──assign──▶ ASSIGNED ──start──▶ IN_PROGRESS ──resolv
   `ASSIGNED→IN_PROGRESS`, `IN_PROGRESS→{ON_HOLD,RESOLVED}`, `ON_HOLD→IN_PROGRESS`,
   `PENDING_APPROVAL→IN_PROGRESS`, `REOPENED→{IN_PROGRESS,ASSIGNED}`, `NEW→IN_PROGRESS`.
 - Only the **requester** (or admin) can close/reopen/rate (`mustOwn`).
-- `close` requires status `RESOLVED`; `reopen` requires `RESOLVED|CLOSED` + a reason;
-  `rate` requires `CLOSED` and is one-time (1–5).
+- `close` lets the requester close their own ticket from **any non-closed status**
+  (no `RESOLVED` step needed); reopening a closed ticket throws. `reopen` requires
+  `RESOLVED|CLOSED` + a reason; `rate` requires `CLOSED` and is one-time (1–5).
 
 ### Create
 - Validates title + description.
@@ -474,14 +491,14 @@ npm run serve     # static server on :8080
   `PropertiesService`, `CacheService`, `LockService`, `MailApp`, `Utilities`,
   `ScriptApp`, etc.
 - `dev/run.js` — loads the real `backend/*.gs` files into a `vm` context and runs
-  `dev/tests.js` (87 assertions: setup, signup, OTP, sessions, tickets, assignment,
-  status flow, approvals, reassignment, close/rate, analytics, and the `api()` router
-  including role denial).
-- `dev/backend-test.js` — drives the JSON API end-to-end (76 assertions, incl. CBA
-  analyst management, admin cross-cluster assign, the setup-version guard, and email
-  deep links).
+  `dev/tests.js` (95 assertions: setup, signup, OTP, sessions, tickets, assignment,
+  requester self-assign/close, status flow, approvals, reassignment, close/rate,
+  analytics, and the `api()` router including role denial).
+- `dev/backend-test.js` — drives the JSON API end-to-end (82 assertions, incl. CBA
+  analyst management, admin cross-cluster assign, USER self-assign + close, the
+  setup-version guard, and email deep links).
 - `dev/web-test.js` — exercises the static front-end against `js/api.local.js`
-  (84 assertions).
+  (90 assertions).
 - `dev/check-client.js` — verifies every `call('name')` in `js/ui.js` has a route in
   `backend/Api.gs`, and every `$('id')` referenced in `js/ui.js` exists in `index.html`.
 - `dev/mock-server.js` — a tiny HTTP server that loads `backend/*.gs` and serves the

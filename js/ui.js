@@ -716,11 +716,16 @@
     var isOwner = t.raisedByEmail === u.email;
 
     var actions = [];
-    if (isCba && ['CLOSED','RESOLVED'].indexOf(t.status) < 0) {
+    var openStatus = ['CLOSED','RESOLVED'].indexOf(t.status) < 0;
+    if (isCba && openStatus) {
       actions.push('<button class="btn primary small" id="actAssign">' + (t.analystEmail ? 'Reassign' : 'Assign / take') + '</button>');
       actions.push('<button class="btn small" id="actApproval">Request external approval</button>');
     }
-    if (isAssignee) {
+    // A requester who isn't a CBA/admin can still take their own ticket.
+    if (isOwner && !isCba && !isAssignee && openStatus) {
+      actions.push('<button class="btn primary small" id="actTake">Take it myself</button>');
+    }
+    if (isAssignee && role !== 'USER') {
       if (['ASSIGNED','NEW','REOPENED'].indexOf(t.status) >= 0) actions.push('<button class="btn primary small" id="actStart">Start work</button>');
       if (t.status === 'IN_PROGRESS') {
         actions.push('<button class="btn small" id="actHold">Put on hold</button>');
@@ -729,7 +734,7 @@
       if (t.status === 'ON_HOLD') actions.push('<button class="btn primary small" id="actResume">Resume</button>');
       if (role === 'ANALYST' && t.status !== 'CLOSED') actions.push('<button class="btn small" id="actReassign">Request reassignment</button>');
     }
-    if (isOwner && t.status === 'RESOLVED') actions.push('<button class="btn success small" id="actClose">Accept &amp; close</button>');
+    if (isOwner && t.status !== 'CLOSED') actions.push('<button class="btn success small" id="actClose">' + (t.status === 'RESOLVED' ? 'Accept &amp; close' : 'Mark as done') + '</button>');
     if (isOwner && ['RESOLVED','CLOSED'].indexOf(t.status) >= 0) actions.push('<button class="btn small" id="actReopen">Reopen</button>');
     if (isOwner && t.status === 'CLOSED' && !t.rating) actions.push('<button class="btn primary small" id="actRate">Rate this ticket</button>');
 
@@ -788,6 +793,7 @@
         .catch(function (e) { toast(e.message, 'err'); });
     };
     if ($('actAssign')) $('actAssign').onclick = function () { assignModal(t); };
+    if ($('actTake')) $('actTake').onclick = function () { doTake(t); };
     if ($('actApproval')) $('actApproval').onclick = function () { approvalModal(t); };
     if ($('actReassign')) $('actReassign').onclick = function () { reassignModal(t); };
     if ($('actStart')) $('actStart').onclick = function () { doStatus(t, 'IN_PROGRESS'); };
@@ -806,6 +812,11 @@
   function doClose(t) {
     call('closeTicket', { ticketId: t.ticketId })
       .then(function () { toast('Ticket closed', 'ok'); openTicket(t.ticketId); })
+      .catch(function (e) { toast(e.message, 'err'); });
+  }
+  function doTake(t) {
+    call('assignTicket', { ticketId: t.ticketId, analystEmail: state.user.email })
+      .then(function () { toast('Ticket assigned to you', 'ok'); openTicket(t.ticketId); refreshBadge(); })
       .catch(function (e) { toast(e.message, 'err'); });
   }
   function doReopen(t) {

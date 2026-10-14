@@ -8,11 +8,13 @@ var Tickets = {
 
   /* --------------------------- visibility -------------------------- */
   canSee: function (user, t) {
+    // Whoever raised the ticket always sees it, whatever their role.
+    if (normEmail(t.RaisedByEmail) === normEmail(user.Email)) return true;
     switch (String(user.Role).toUpperCase()) {
       case 'ADMIN':   return true;
       case 'CBA':     return String(t.ClusterID) === String(user.ClusterID);
       case 'ANALYST': return normEmail(t.AnalystEmail) === normEmail(user.Email);
-      case 'USER':    return normEmail(t.RaisedByEmail) === normEmail(user.Email);
+      case 'USER':    return false;
       default:        return false;
     }
   },
@@ -231,6 +233,7 @@ var Tickets = {
   /* ---------------------------- assign ----------------------------- */
   /**
    * Resolves who a ticket may be assigned to. Allowed targets:
+   *   - the requester themselves (any role can take their own ticket), or
    *   - an ACTIVE ANALYST in the ticket's cluster (CBA hand-off), or
    *   - the acting CBA themselves (self-assign / "take this ticket"), or
    *   - for an ADMIN, any ACTIVE CBA/ANALYST in ANY cluster.
@@ -245,6 +248,9 @@ var Tickets = {
     var actorRole = String(user.Role).toUpperCase();
     var isSelf = normEmail(target.Email) === normEmail(user.Email);
     var sameCluster = String(target.ClusterID) === String(t.ClusterID);
+
+    // Whoever raised the ticket can always take it themselves, whatever their role.
+    if (isSelf && normEmail(t.RaisedByEmail) === normEmail(user.Email)) return target;
 
     // An admin can hand a ticket to any active worker, in any cluster.
     if (actorRole === 'ADMIN' && (role === 'CBA' || role === 'ANALYST')) return target;
@@ -287,6 +293,8 @@ var Tickets = {
   /**
    * People a ticket can be handed to. A CBA sees the analysts in their cluster
    * (plus themselves); an admin sees every active CBA/analyst in every cluster.
+   * Everyone can always take a ticket they raised themselves, so "me" is offered
+   * to every role.
    */
   myAnalysts: function (user) {
     var role = String(user.Role).toUpperCase();
@@ -305,14 +313,12 @@ var Tickets = {
         clusterId: u.ClusterID || '', clusterName: clusters[String(u.ClusterID)] || u.ClusterID || ''
       };
     });
-    // A CBA can take a ticket themselves, so offer "me" as an assignee too.
-    if (role === 'CBA') {
-      list.unshift({
-        email: normEmail(user.Email), name: user.Name + ' (me)', role: 'CBA',
-        clusterId: user.ClusterID || '',
-        clusterName: clusters[String(user.ClusterID)] || user.ClusterID || '', self: true
-      });
-    }
+    // Anyone can take a ticket they raised themselves, so offer "me" too.
+    list.unshift({
+      email: normEmail(user.Email), name: user.Name + ' (me)', role: role,
+      clusterId: user.ClusterID || '',
+      clusterName: clusters[String(user.ClusterID)] || user.ClusterID || '', self: true
+    });
     return list;
   },
 
@@ -357,11 +363,10 @@ var Tickets = {
   /* ------------------------- close / reopen ------------------------ */
   close: function (user, p) {
     var t = Tickets.mustOwn(user, p.ticketId);
-    if (String(t.Status).toUpperCase() !== 'RESOLVED') {
-      throw new Error('Only a resolved ticket can be closed.');
-    }
+    var st = String(t.Status).toUpperCase();
+    if (st === 'CLOSED') throw new Error('This ticket is already closed.');
     Db.update(SHEETS.TICKETS, t._row, { Status: 'CLOSED', ClosedAt: now(), UpdatedAt: now() });
-    Tickets.log(t.TicketID, user, 'CLOSED', 'RESOLVED', 'CLOSED', p.note || '');
+    Tickets.log(t.TicketID, user, 'CLOSED', st, 'CLOSED', p.note || '');
     return Tickets.publicTicket(Db.findOne(SHEETS.TICKETS, function (x) { return String(x.TicketID) === String(t.TicketID); }));
   },
 

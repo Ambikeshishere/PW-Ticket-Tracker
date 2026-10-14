@@ -184,6 +184,21 @@ eq(Number(rate.rating), 5, 'rating saved');
 const rateAgain = call('rateTicket', riya.token, { ticketId: t1.ticketId, rating: 3 });
 ok(!rateAgain.ok, 'cannot rate twice');
 
+section('Requester self-assign + close (any role)');
+const myTicket = must('createTicket', riya.token, { title: 'Riya takes her own', description: 'self-handle', priority: 'Low' });
+const userList = must('myAnalysts', riya.token, {});
+ok(userList.some((a) => a.self === true && a.email === 'riya@pw.live'), 'USER myAnalysts offers "me"');
+const taken = must('assignTicket', riya.token, { ticketId: myTicket.ticketId, analystEmail: 'riya@pw.live' });
+eq(taken.analystEmail, 'riya@pw.live', 'USER can self-assign');
+eq(taken.status, 'ASSIGNED', 'USER self-assign -> ASSIGNED');
+const done = must('closeTicket', riya.token, { ticketId: myTicket.ticketId });
+eq(done.status, 'CLOSED', 'USER marks done without RESOLVED');
+const closeAgain = call('closeTicket', riya.token, { ticketId: myTicket.ticketId });
+ok(!closeAgain.ok, 'cannot close an already-closed ticket');
+const karan = login('karan@pw.live');
+const steal = call('closeTicket', karan.token, { ticketId: myTicket.ticketId });
+ok(!steal.ok, 'non-owner cannot close');
+
 section('reopen guard');
 const reopenNoReason = call('reopenTicket', riya.token, { ticketId: t1.ticketId });
 ok(!reopenNoReason.ok, 'reopen requires a reason');

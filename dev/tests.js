@@ -174,6 +174,33 @@ module.exports = function runTests(ctx, t) {
   throws('CBA cannot assign to a non-analyst', () =>
     ctx.Tickets.assign(cba, { ticketId: cbaTicket.ticketId, analystEmail: 'riya@pw.live' }), 'Associate Analyst');
 
+  /* ============ any requester: self-assign + mark done =========== */
+  section('Requester self-assign + close (any role)');
+  // A USER raises a ticket, takes it, and closes it without an analyst.
+  const userTicket = ctx.Tickets.create(riya2, {
+    title: 'User takes own ticket', description: 'I will handle this myself.', priority: 'Low',
+  });
+  ok('USER myAnalysts offers "me"',
+    ctx.Tickets.myAnalysts(riya2).some((a) => a.email === 'riya@pw.live' && a.self === true));
+  const userTake = ctx.Tickets.assign(riya2, { ticketId: userTicket.ticketId, analystEmail: 'riya@pw.live' });
+  eq('USER can self-assign', userTake.analystEmail, 'riya@pw.live');
+  eq('USER self-assign -> ASSIGNED', userTake.status, 'ASSIGNED');
+  const userDone = ctx.Tickets.close(riya2, { ticketId: userTicket.ticketId });
+  eq('USER can mark done from ASSIGNED (no RESOLVED needed)', userDone.status, 'CLOSED');
+  throws('cannot close an already-closed ticket', () =>
+    ctx.Tickets.close(riya2, { ticketId: userTicket.ticketId }), 'already closed');
+
+  // An ANALYST can open + take a ticket they raised, before any assignment.
+  const anTicket = ctx.Tickets.create(analyst, {
+    title: 'Analyst raised request', description: 'Raised by an analyst.', priority: 'Low',
+  });
+  const anSeen = ctx.Tickets.get(analyst, { ticketId: anTicket.ticketId });
+  eq('ANALYST can open a ticket they raised', anSeen.ticketId, anTicket.ticketId);
+  const anTake = ctx.Tickets.assign(analyst, { ticketId: anTicket.ticketId, analystEmail: 'analyst@pw.live' });
+  eq('ANALYST can self-assign', anTake.analystEmail, 'analyst@pw.live');
+  const anDone = ctx.Tickets.close(analyst, { ticketId: anTicket.ticketId });
+  eq('ANALYST can mark as done', anDone.status, 'CLOSED');
+
   /* ========================== approvals ========================== */
   section('External approvals');
   const req = ctx.Approvals.request(cba, { ticketId, approverEmail: 'boss@pw.live', note: 'Please approve' });
