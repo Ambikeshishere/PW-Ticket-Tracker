@@ -131,6 +131,23 @@ eq(assigned.analystEmail, 'analyst@pw.live', 'analyst set');
 const crossAssign = call('assignTicket', cba.token, { ticketId: t1.ticketId, analystEmail: 'sneha@pw.live' });
 ok(!crossAssign.ok, 'cannot assign analyst from another cluster');
 
+section('CBA: create + self-assign + share');
+const cbaTicket = must('createTicket', cba.token, { title: 'CBA self task', description: 'raised by the CBA', priority: 'Medium' });
+ok(/^TKT-/.test(cbaTicket.ticketId), 'CBA can create a ticket');
+eq(cbaTicket.raisedByEmail, 'cba@pw.live', 'CBA is the requester');
+const cbaAnalysts = must('myAnalysts', cba.token, {});
+ok(cbaAnalysts.some((a) => a.self === true && a.email === 'cba@pw.live'), 'CBA myAnalysts offers "me"');
+const selfA = must('assignTicket', cba.token, { ticketId: cbaTicket.ticketId, analystEmail: 'cba@pw.live' });
+eq(selfA.analystEmail, 'cba@pw.live', 'CBA self-assign sets analyst to self');
+eq(selfA.status, 'ASSIGNED', 'CBA self-assign -> ASSIGNED');
+const cbaStart = must('updateStatus', cba.token, { ticketId: cbaTicket.ticketId, status: 'IN_PROGRESS' });
+eq(cbaStart.status, 'IN_PROGRESS', 'CBA can work on a self-assigned ticket');
+const cbaShare = must('assignTicket', cba.token, { ticketId: cbaTicket.ticketId, analystEmail: 'analyst@pw.live' });
+eq(cbaShare.analystEmail, 'analyst@pw.live', 'CBA can share with an analyst');
+const cbaAssignOnCreate = must('createTicket', cba.token, { title: 'CBA assign on create', description: 'x', priority: 'Low', assignTo: 'analyst@pw.live' });
+eq(cbaAssignOnCreate.status, 'ASSIGNED', 'assignTo on create -> ASSIGNED');
+eq(cbaAssignOnCreate.analystEmail, 'analyst@pw.live', 'assignTo on create sets analyst');
+
 section('ANALYST: status transitions');
 const analyst = login('analyst@pw.live');
 const t2mine = must('listTickets', analyst.token, {});

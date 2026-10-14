@@ -223,10 +223,19 @@
       });
       Tickets.log(ticket.TicketID, user, 'CREATED', '', priority, 'Ticket raised');
       Auth.logActivity(user, 'TICKET_CREATE', ticket.TicketID);
-      if (cbaEmail) Mail.send(cbaEmail, '[New Ticket] ' + ticket.TicketID + ' - ' + ticket.Title,
+      if (p.assignTo) {
+        var assignee = Tickets.resolveAssignee_(user, ticket, p.assignTo);
+        Store.update('tickets', ticket, { AnalystEmail: normEmail(assignee.Email), Status: 'ASSIGNED', UpdatedAt: U.now() });
+        Tickets.log(ticket.TicketID, user, 'ASSIGNED', '', normEmail(assignee.Email), 'Assigned on create');
+        Auth.logActivity(user, 'ASSIGN', ticket.TicketID + ' -> ' + assignee.Email);
+      }
+      if (cbaEmail && cbaEmail !== normEmail(user.Email)) Mail.send(cbaEmail, '[New Ticket] ' + ticket.TicketID + ' - ' + ticket.Title,
         user.Name + ' raised "' + ticket.Title + '" (' + priority + '). Please triage.');
       Mail.send(user.Email, '[Received] ' + ticket.TicketID + ' - ' + ticket.Title,
         'We received your request. Due by ' + U.fmtDate(ticket.DueAt) + '.');
+      if (ticket.AnalystEmail && normEmail(ticket.AnalystEmail) !== normEmail(user.Email)) {
+        Mail.send(ticket.AnalystEmail, '[Assigned] ' + ticket.TicketID + ' - ' + ticket.Title, user.Name + ' assigned this ticket to you.');
+      }
       return Tickets.publicTicket(ticket);
     },
 
@@ -268,32 +277,54 @@
       return Object.assign(Tickets.publicTicket(t), { logs: logs, comments: comments, approvals: approvals, reassignRequests: reassigns });
     },
 
+    resolveAssignee_: function (user, t, email) {
+      var target = Store.findOne('users', function (u) { return normEmail(u.Email) === normEmail(email); });
+      if (!target) fail('Selected user not found.');
+      if (String(target.Status).toUpperCase() !== 'ACTIVE') fail('That user is inactive.');
+      var role = String(target.Role).toUpperCase();
+      var actorRole = String(user.Role).toUpperCase();
+      var isSelf = normEmail(target.Email) === normEmail(user.Email);
+      var sameCluster = String(target.ClusterID) === String(t.ClusterID);
+      if (role === 'ANALYST') {
+        if (!sameCluster) fail('That analyst is not in this ticket\'s cluster.');
+        return target;
+      }
+      if (role === 'CBA' && isSelf && sameCluster) return target;
+      if (actorRole === 'ADMIN' && (role === 'CBA' || role === 'ANALYST') && sameCluster) return target;
+      fail('Assign to an Associate Analyst in this cluster, or take it yourself.');
+    },
+
     assign: function (user, p) {
       var t = Store.findOne('tickets', function (x) { return String(x.TicketID) === String(p.ticketId); });
       if (!t) fail('Ticket not found.');
       if (!Tickets.canSee(user, t)) fail('This ticket is outside your cluster.');
       var st = String(t.Status).toUpperCase();
       if (['CLOSED', 'RESOLVED'].indexOf(st) >= 0) fail('Cannot assign a ' + st + ' ticket.');
-      var analyst = Store.findOne('users', function (u) { return normEmail(u.Email) === normEmail(p.analystEmail); });
-      if (!analyst || String(analyst.Role).toUpperCase() !== 'ANALYST') fail('Selected user is not an Associate Analyst.');
-      if (String(analyst.Status).toUpperCase() !== 'ACTIVE') fail('That analyst is inactive.');
-      if (String(analyst.ClusterID) !== String(t.ClusterID)) fail('That analyst is not in this ticket\'s cluster.');
+      var assignee = Tickets.resolveAssignee_(user, t, p.analystEmail);
       var old = t.AnalystEmail || '';
-      Store.update('tickets', t, { AnalystEmail: normEmail(analyst.Email), Status: 'ASSIGNED', UpdatedAt: U.now() });
-      Tickets.log(t.TicketID, user, 'ASSIGNED', old, normEmail(analyst.Email), p.note || '');
-      Auth.logActivity(user, 'ASSIGN', t.TicketID + ' -> ' + analyst.Email);
-      Mail.send(analyst.Email, '[Assigned] ' + t.TicketID + ' - ' + t.Title, user.Name + ' assigned this ticket to you.');
-      Mail.send(t.RaisedByEmail, 'Update on ' + t.TicketID, 'Your ticket is now with ' + analyst.Email + '.');
+      Store.update('tickets', t, { AnalystEmail: normEmail(assignee.Email), Status: 'ASSIGNED', UpdatedAt: U.now() });
+      Tickets.log(t.TicketID, user, 'ASSIGNED', old, normEmail(assignee.Email), p.note || '');
+      Auth.logActivity(user, 'ASSIGN', t.TicketID + ' -> ' + assignee.Email);
+      if (normEmail(assignee.Email) !== normEmail(user.Email)) {
+        Mail.send(assignee.Email, '[Assigned] ' + t.TicketID + ' - ' + t.Title, user.Name + ' assigned this ticket to you.');
+      }
+      if (normEmail(t.RaisedByEmail) !== normEmail(assignee.Email)) {
+        Mail.send(t.RaisedByEmail, 'Update on ' + t.TicketID, 'Your ticket is now with ' + assignee.Email + '.');
+      }
       return Tickets.publicTicket(t);
     },
 
     myAnalysts: function (user) {
       var role = String(user.Role).toUpperCase();
-      return Store.all('users').filter(function (u) {
+      var list = Store.all('users').filter(function (u) {
         if (String(u.Role).toUpperCase() !== 'ANALYST' || String(u.Status).toUpperCase() !== 'ACTIVE') return false;
         if (role === 'ADMIN') return true;
         return String(u.ClusterID) === String(user.ClusterID);
       }).map(function (u) { return { email: normEmail(u.Email), name: u.Name, clusterId: u.ClusterID }; });
+      if (role === 'CBA') {
+        list.unshift({ email: normEmail(user.Email), name: user.Name + ' (me)', clusterId: user.ClusterID, self: true });
+      }
+      return list;
     },
 
     updateStatus: function (user, p) {
@@ -715,7 +746,7 @@
   var PRIVATE_API = {
     logout: { fn: function (u, p) { return Auth.logout(p.token); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
     me: { fn: function (u) { return Auth.me(u); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
-    createTicket: { fn: function (u, p) { return Tickets.create(u, p); }, roles: ['USER', 'ADMIN'] },
+    createTicket: { fn: function (u, p) { return Tickets.create(u, p); }, roles: ['USER', 'CBA', 'ADMIN'] },
     listTickets: { fn: function (u, p) { return Tickets.list(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
     getTicket: { fn: function (u, p) { return Tickets.get(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
     addComment: { fn: function (u, p) { return Tickets.addComment(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },

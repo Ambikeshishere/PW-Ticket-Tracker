@@ -149,6 +149,42 @@ t.eq('dashboard -> ok:true', dash.ok, true);
 t.ok('dashboard has totals', !!(dash.data && typeof dash.data.total === 'number'));
 t.ok('dashboard counts the new ticket', dash.data.total >= 1);
 
+/* --------------------------- CBA create + self-assign ---------------- */
+t.section('CBA create + self-assign');
+const mkCba = call('adminSaveUser', adminToken, { user: { email: 'cba@pw.live', name: 'Priya CBA', role: 'CBA', clusterId: clusterId } });
+t.eq('adminSaveUser (CBA) -> ok:true', mkCba.ok, true);
+const cbaToken = (function () {
+  call('requestOtp', '', { email: 'cba@pw.live' });
+  return call('verifyOtp', '', { email: 'cba@pw.live', code: lastOtp() }).data.token;
+})();
+
+const cbaCreated = call('createTicket', cbaToken, {
+  title: 'CBA raised via API', description: 'raised by the CBA', priority: 'Medium',
+});
+t.eq('CBA createTicket -> ok:true', cbaCreated.ok, true);
+const cbaTicketId = cbaCreated.data && cbaCreated.data.ticketId;
+t.ok('CBA ticket has an id', !!cbaTicketId, JSON.stringify(cbaCreated.data));
+
+const cbaAnalysts = call('myAnalysts', cbaToken, {});
+t.ok('CBA myAnalysts includes self', Array.isArray(cbaAnalysts.data) && cbaAnalysts.data.some((a) => a.self === true));
+
+const selfAssign = call('assignTicket', cbaToken, { ticketId: cbaTicketId, analystEmail: 'cba@pw.live' });
+t.eq('CBA self-assign -> ok:true', selfAssign.ok, true);
+t.eq('CBA self-assign sets analyst', selfAssign.data && selfAssign.data.analystEmail, 'cba@pw.live');
+t.eq('CBA self-assign -> ASSIGNED', selfAssign.data && selfAssign.data.status, 'ASSIGNED');
+
+const cbaStart = call('updateStatus', cbaToken, { ticketId: cbaTicketId, status: 'IN_PROGRESS' });
+t.eq('CBA can start a self-assigned ticket', cbaStart.data && cbaStart.data.status, 'IN_PROGRESS');
+
+const cbaShare = call('assignTicket', cbaToken, { ticketId: cbaTicketId, analystEmail: 'analyst@pw.live' });
+t.eq('CBA can hand it to an analyst', cbaShare.data && cbaShare.data.analystEmail, 'analyst@pw.live');
+
+const cbaAssignOnCreate = call('createTicket', cbaToken, {
+  title: 'CBA assign-on-create', description: 'x', priority: 'Low', assignTo: 'analyst@pw.live',
+});
+t.eq('CBA assignTo on create -> ASSIGNED', cbaAssignOnCreate.data && cbaAssignOnCreate.data.status, 'ASSIGNED');
+t.eq('CBA assignTo on create sets analyst', cbaAssignOnCreate.data && cbaAssignOnCreate.data.analystEmail, 'analyst@pw.live');
+
 /* --------------------------- transport layer ------------------------- */
 t.section('transport (doPost / doGet)');
 const viaPost = post({ api: 'getClusters', token: '', payload: {} });

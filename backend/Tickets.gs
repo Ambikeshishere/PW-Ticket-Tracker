@@ -127,9 +127,30 @@ var Tickets = {
 
     Tickets.log(ticket.TicketID, user, 'CREATED', '', priority, 'Ticket raised');
     Auth.logActivity(user, 'TICKET_CREATE', ticket.TicketID);
+
+    // A CBA (or admin) can take the ticket themselves or hand it to an analyst
+    // right away, instead of leaving it unassigned.
+    if (p.assignTo) {
+      var fresh = Db.findOne(SHEETS.TICKETS, function (x) { return String(x.TicketID) === String(ticket.TicketID); });
+      var assignee = Tickets.resolveAssignee_(user, fresh, p.assignTo);
+      Db.update(SHEETS.TICKETS, fresh._row, {
+        AnalystEmail: normEmail(assignee.Email), Status: 'ASSIGNED', UpdatedAt: now()
+      });
+      ticket = Db.findOne(SHEETS.TICKETS, function (x) { return String(x.TicketID) === String(ticket.TicketID); });
+      Tickets.log(ticket.TicketID, user, 'ASSIGNED', '', normEmail(assignee.Email), 'Assigned on create');
+      Auth.logActivity(user, 'ASSIGN', ticket.TicketID + ' -> ' + assignee.Email);
+    }
+
     try {
-      mailNewTicketToCba(ticket, cbaEmail);
+      // Don't email the CBA about a ticket they raised themselves.
+      if (cbaEmail && cbaEmail !== normEmail(user.Email)) mailNewTicketToCba(ticket, cbaEmail);
       mailTicketCreatedToUser(ticket);
+      if (ticket.AnalystEmail && normEmail(ticket.AnalystEmail) !== normEmail(user.Email)) {
+        mailAssignedToAnalyst(ticket, normEmail(ticket.AnalystEmail), user.Name);
+      }
+      if (ticket.AnalystEmail && normEmail(ticket.RaisedByEmail) !== normEmail(ticket.AnalystEmail)) {
+        mailAssignedToRequester(ticket);
+      }
     } catch (e) { logErr('createMail', e); }
 
     return Tickets.publicTicket(ticket);
@@ -208,6 +229,32 @@ var Tickets = {
   },
 
   /* ---------------------------- assign ----------------------------- */
+  /**
+   * Resolves who a ticket may be assigned to. Allowed targets:
+   *   - an ACTIVE ANALYST in the ticket's cluster (CBA/admin hand-off), or
+   *   - the acting CBA themselves (self-assign / "take this ticket"), or
+   *   - for an ADMIN, any ACTIVE CBA/ANALYST in the cluster.
+   * Throws a friendly error otherwise.
+   */
+  resolveAssignee_: function (user, t, email) {
+    var target = Db.findOne(SHEETS.USERS, function (u) { return normEmail(u.Email) === normEmail(email); });
+    if (!target) throw new Error('Selected user not found.');
+    if (String(target.Status).toUpperCase() !== 'ACTIVE') throw new Error('That user is inactive.');
+
+    var role = String(target.Role).toUpperCase();
+    var actorRole = String(user.Role).toUpperCase();
+    var isSelf = normEmail(target.Email) === normEmail(user.Email);
+    var sameCluster = String(target.ClusterID) === String(t.ClusterID);
+
+    if (role === 'ANALYST') {
+      if (!sameCluster) throw new Error('That analyst is not in this ticket\'s cluster.');
+      return target;
+    }
+    if (role === 'CBA' && isSelf && sameCluster) return target;   // CBA takes it themselves
+    if (actorRole === 'ADMIN' && (role === 'CBA' || role === 'ANALYST') && sameCluster) return target;
+    throw new Error('Assign to an Associate Analyst in this cluster, or take it yourself.');
+  },
+
   assign: function (user, p) {
     var t = Db.findOne(SHEETS.TICKETS, function (x) { return String(x.TicketID) === String(p.ticketId); });
     if (!t) throw new Error('Ticket not found.');
@@ -215,34 +262,30 @@ var Tickets = {
     var st = String(t.Status).toUpperCase();
     if (['CLOSED', 'RESOLVED'].indexOf(st) >= 0) throw new Error('Cannot assign a ' + st + ' ticket.');
 
-    var analyst = Db.findOne(SHEETS.USERS, function (u) { return normEmail(u.Email) === normEmail(p.analystEmail); });
-    if (!analyst || String(analyst.Role).toUpperCase() !== 'ANALYST') {
-      throw new Error('Selected user is not an Associate Analyst.');
-    }
-    if (String(analyst.Status).toUpperCase() !== 'ACTIVE') throw new Error('That analyst is inactive.');
-    if (String(analyst.ClusterID) !== String(t.ClusterID)) {
-      throw new Error('That analyst is not in this ticket\'s cluster.');
-    }
+    var assignee = Tickets.resolveAssignee_(user, t, p.analystEmail);
 
     var old = t.AnalystEmail || '';
     Db.update(SHEETS.TICKETS, t._row, {
-      AnalystEmail: normEmail(analyst.Email), Status: 'ASSIGNED', UpdatedAt: now()
+      AnalystEmail: normEmail(assignee.Email), Status: 'ASSIGNED', UpdatedAt: now()
     });
-    Tickets.log(t.TicketID, user, 'ASSIGNED', old, normEmail(analyst.Email), p.note || '');
-    Auth.logActivity(user, 'ASSIGN', t.TicketID + ' -> ' + analyst.Email);
+    Tickets.log(t.TicketID, user, 'ASSIGNED', old, normEmail(assignee.Email), p.note || '');
+    Auth.logActivity(user, 'ASSIGN', t.TicketID + ' -> ' + assignee.Email);
 
     var fresh = Db.findOne(SHEETS.TICKETS, function (x) { return String(x.TicketID) === String(p.ticketId); });
     try {
-      mailAssignedToAnalyst(fresh, normEmail(analyst.Email), user.Name);
-      mailAssignedToRequester(fresh);
+      // Don't email yourself when you take the ticket.
+      if (normEmail(assignee.Email) !== normEmail(user.Email)) {
+        mailAssignedToAnalyst(fresh, normEmail(assignee.Email), user.Name);
+      }
+      if (normEmail(fresh.RaisedByEmail) !== normEmail(assignee.Email)) mailAssignedToRequester(fresh);
     } catch (e) { logErr('assignMail', e); }
     return Tickets.publicTicket(fresh);
   },
 
-  /** Analysts a CBA/admin can assign to (same cluster). */
+  /** Analysts a CBA/admin can assign to (same cluster). A CBA also gets themselves. */
   myAnalysts: function (user) {
     var role = String(user.Role).toUpperCase();
-    return Db.all(SHEETS.USERS).filter(function (u) {
+    var list = Db.all(SHEETS.USERS).filter(function (u) {
       if (String(u.Role).toUpperCase() !== 'ANALYST') return false;
       if (String(u.Status).toUpperCase() !== 'ACTIVE') return false;
       if (role === 'ADMIN') return true;
@@ -250,6 +293,11 @@ var Tickets = {
     }).map(function (u) {
       return { email: normEmail(u.Email), name: u.Name, clusterId: u.ClusterID };
     });
+    // A CBA can take a ticket themselves, so offer "me" as an assignee too.
+    if (role === 'CBA') {
+      list.unshift({ email: normEmail(user.Email), name: user.Name + ' (me)', clusterId: user.ClusterID, self: true });
+    }
+    return list;
   },
 
   /* -------------------------- status flow -------------------------- */

@@ -138,6 +138,38 @@ module.exports = function runTests(ctx, t) {
   eq('comment appears in detail', detail.comments.length, 1);
   ok('activity log recorded', detail.logs.length >= 3);
 
+  /* ==================== CBA: create + self-assign ================= */
+  section('CBA: create, self-assign, share');
+  const cbaTicket = ctx.Tickets.create(cba, {
+    title: 'CBA raised request', description: 'Raised by the CBA themselves.',
+    category: 'New analysis', priority: 'Medium',
+  });
+  ok('CBA can create a ticket', /^TKT-\d{4}-\d{5}$/.test(cbaTicket.ticketId));
+  eq('CBA ticket requester is the CBA', cbaTicket.raisedByEmail, 'cba@pw.live');
+  eq('CBA ticket starts NEW', cbaTicket.status, 'NEW');
+
+  const selfAssigned = ctx.Tickets.assign(cba, { ticketId: cbaTicket.ticketId, analystEmail: 'cba@pw.live' });
+  eq('CBA self-assign sets analyst to self', selfAssigned.analystEmail, 'cba@pw.live');
+  eq('CBA self-assign -> ASSIGNED', selfAssigned.status, 'ASSIGNED');
+
+  const cbaStart = ctx.Tickets.updateStatus(cba, { ticketId: cbaTicket.ticketId, status: 'IN_PROGRESS' });
+  eq('CBA can work on a self-assigned ticket', cbaStart.status, 'IN_PROGRESS');
+
+  const cbaList = ctx.Tickets.myAnalysts(cba);
+  ok('CBA myAnalysts offers "me"', cbaList.some((a) => a.email === 'cba@pw.live' && a.self === true));
+
+  const shared = ctx.Tickets.assign(cba, { ticketId: cbaTicket.ticketId, analystEmail: 'analyst@pw.live' });
+  eq('CBA can hand it to an analyst', shared.analystEmail, 'analyst@pw.live');
+
+  const createdAssigned = ctx.Tickets.create(cba, {
+    title: 'CBA creates and assigns', description: 'Assign on create.',
+    priority: 'Low', assignTo: 'analyst@pw.live',
+  });
+  eq('assignTo on create sets analyst', createdAssigned.analystEmail, 'analyst@pw.live');
+  eq('assignTo on create -> ASSIGNED', createdAssigned.status, 'ASSIGNED');
+  throws('CBA cannot assign to a non-analyst', () =>
+    ctx.Tickets.assign(cba, { ticketId: cbaTicket.ticketId, analystEmail: 'riya@pw.live' }), 'Associate Analyst');
+
   /* ========================== approvals ========================== */
   section('External approvals');
   const req = ctx.Approvals.request(cba, { ticketId, approverEmail: 'boss@pw.live', note: 'Please approve' });

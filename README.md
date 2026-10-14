@@ -115,9 +115,10 @@ defined in `Setup.gs` (`portalHeaders_()`).
 | Capability | USER | ANALYST | CBA | ADMIN |
 |---|:--:|:--:|:--:|:--:|
 | Sign up (self) | ✅ | – | – | – |
-| Raise a ticket | ✅ | – | – | ✅ |
+| Raise a ticket | ✅ | – | ✅ | ✅ |
 | See tickets | own only | assigned only | own cluster | all |
 | Assign analyst | – | – | ✅ | ✅ |
+| Take a ticket (self-assign) | – | – | ✅ | – |
 | Move status | – | own tickets | cluster | ✅ |
 | Request external approval | – | – | ✅ | ✅ |
 | Request reassignment | – | own tickets | – | – |
@@ -128,6 +129,23 @@ defined in `Setup.gs` (`portalHeaders_()`).
 
 Visibility is enforced in one place: `Tickets.canSee(user, ticket)`.
 Role checks are enforced in one place: the `roles` array on each `PRIVATE_API` route.
+
+### CBA as a worker
+A CBA is not just a triager — they can also **raise their own tickets**, **take a
+ticket themselves** (self-assign), and **hand it to an analyst** in their cluster:
+
+- `createTicket` is allowed for `USER`, `CBA`, and `ADMIN`. A CBA-created ticket is
+  raised by the CBA and routed to their cluster.
+- `createTicket` accepts an optional `assignTo` (an analyst email, or the CBA's own
+  email) so the ticket can be assigned the moment it is created.
+- `assignTicket` accepts either an ACTIVE ANALYST in the ticket's cluster **or the
+  acting CBA themselves** (`Tickets.resolveAssignee_`). An ADMIN may assign to any
+  ACTIVE CBA/ANALYST in the cluster.
+- `myAnalysts` returns the cluster's analysts **plus the CBA themselves** (flagged
+  `self: true`), so the assign dropdown offers "take it myself".
+- Once self-assigned, the CBA sees the same work actions as an analyst
+  (Start / Hold / Resolve) and can close/reopen/rate tickets they raised.
+
 
 ---
 
@@ -229,6 +247,8 @@ NEW ──assign──▶ ASSIGNED ──start──▶ IN_PROGRESS ──resolv
   `{ duplicate: true, existingTicketId }` unless `force` is set.
 - Resolves the cluster's CBA email, computes `DueAt` from SLA, inserts the ticket
   inside `withLock` (so IDs never collide), logs `CREATED`, emails CBA + requester.
+- Optional `assignTo` (analyst email, or the CBA's own email) assigns the ticket
+  immediately — status goes straight to `ASSIGNED` and the assignee is notified.
 
 ### List / get
 - `list` filters by `canSee`, then status/priority/cluster/analyst/date/`q`,

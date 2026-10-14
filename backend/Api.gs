@@ -31,7 +31,7 @@ var PRIVATE_API = {
   logout:           { fn: function (u, p) { return Auth.logout(p.token); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
   me:               { fn: function (u) { return Auth.me(u); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
 
-  createTicket:     { fn: function (u, p) { return Tickets.create(u, p); }, roles: ['USER', 'ADMIN'] },
+  createTicket:     { fn: function (u, p) { return Tickets.create(u, p); }, roles: ['USER', 'CBA', 'ADMIN'] },
   listTickets:      { fn: function (u, p) { return Tickets.list(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
   getTicket:        { fn: function (u, p) { return Tickets.get(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
   addComment:       { fn: function (u, p) { return Tickets.addComment(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },

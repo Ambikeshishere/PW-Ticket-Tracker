@@ -180,7 +180,7 @@
     if (r === 'ANALYST') items.push({ id: 'tickets', label: 'Assigned to me', icon: '🗂' });
     if (r === 'CBA') items.push({ id: 'tickets', label: 'Cluster Tickets', icon: '🗂' });
     if (r === 'ADMIN') items.push({ id: 'tickets', label: 'All Tickets', icon: '🗂' });
-    if (r === 'USER' || r === 'ADMIN') items.push({ id: 'new', label: 'Raise a ticket', icon: '＋' });
+    if (r === 'USER' || r === 'CBA' || r === 'ADMIN') items.push({ id: 'new', label: 'Raise a ticket', icon: '＋' });
     if (r === 'CBA' || r === 'ADMIN') {
       items.push({ id: 'approvals', label: 'Approvals', icon: '✓', badge: true });
       items.push({ id: 'reassign', label: 'Reassign Requests', icon: '⇄' });
@@ -293,7 +293,7 @@
 
       $('content').innerHTML =
         '<div class="page-head"><h2>' + h(navLabel()) + '</h2>' +
-          ((state.user.role === 'USER' || state.user.role === 'ADMIN') ? '<button class="btn primary" onclick="__setView(\'new\')">＋ Raise a ticket</button>' : '') + '</div>' +
+          ((state.user.role === 'USER' || state.user.role === 'CBA' || state.user.role === 'ADMIN') ? '<button class="btn primary" onclick="__setView(\'new\')">＋ Raise a ticket</button>' : '') + '</div>' +
         '<div class="toolbar">' +
           '<input id="fQ" placeholder="Search id, title, requester…" value="' + h(state.filters.q) + '">' +
           '<select id="fStatus"><option value="">All statuses</option>' +
@@ -324,6 +324,7 @@
 
   /* --------------------------- new ticket ---------------------------- */
   function renderNewTicket() {
+    var canAssign = state.user.role === 'CBA' || state.user.role === 'ADMIN';
     $('content').innerHTML =
       '<div class="page-head"><h2>Raise a ticket</h2></div>' +
       '<div class="card" style="padding:22px;max-width:720px">' +
@@ -337,6 +338,8 @@
           '</select></div>' +
         '</div>' +
         '<div class="field"><label>Department</label><input id="ntDept" value="' + h(state.user.department || '') + '"></div>' +
+        (canAssign ? '<div class="field"><label>Assign to</label><select id="ntAssign"><option value="">Leave unassigned</option></select>' +
+          '<div class="muted" style="font-size:12px;margin-top:4px">Take it yourself, or hand it to an analyst in your cluster.</div></div>' : '') +
         '<div class="field"><label>Description</label><textarea id="ntDesc" placeholder="Describe your request in detail…"></textarea></div>' +
         '<div class="inline" style="justify-content:flex-end">' +
           '<button class="btn" id="ntCancel">Cancel</button>' +
@@ -344,12 +347,21 @@
       '</div>';
     $('ntCancel').onclick = function () { setView('tickets'); };
     $('ntSubmit').onclick = function () { submitTicket(false); };
+    if (canAssign) {
+      call('myAnalysts', {}).then(function (list) {
+        var sel = $('ntAssign');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">Leave unassigned</option>' +
+          list.map(function (a) { return '<option value="' + h(a.email) + '">' + h(a.name) + ' (' + h(a.email) + ')</option>'; }).join('');
+      }).catch(function () {});
+    }
   }
   function submitTicket(force) {
     var b = $('ntSubmit'); b.disabled = true; b.innerHTML = spin() + ' Submitting…';
     call('createTicket', {
       title: $('ntTitle').value, category: $('ntCategory').value, priority: $('ntPriority').value,
-      department: $('ntDept').value, description: $('ntDesc').value, force: force
+      department: $('ntDept').value, description: $('ntDesc').value, force: force,
+      assignTo: $('ntAssign') ? $('ntAssign').value : ''
     }).then(function (t) {
       if (t && t.duplicate) {
         b.disabled = false; b.textContent = 'Submit ticket';
@@ -602,22 +614,22 @@
   function renderTicketDetail(t) {
     var u = state.user, role = u.role;
     var isCba = role === 'CBA' || role === 'ADMIN';
-    var isAnalyst = role === 'ANALYST' && t.analystEmail === u.email;
+    var isAssignee = !!t.analystEmail && t.analystEmail === u.email;
     var isOwner = t.raisedByEmail === u.email;
 
     var actions = [];
     if (isCba && ['CLOSED','RESOLVED'].indexOf(t.status) < 0) {
-      actions.push('<button class="btn primary small" id="actAssign">' + (t.analystEmail ? 'Reassign' : 'Assign') + ' analyst</button>');
+      actions.push('<button class="btn primary small" id="actAssign">' + (t.analystEmail ? 'Reassign' : 'Assign / take') + '</button>');
       actions.push('<button class="btn small" id="actApproval">Request external approval</button>');
     }
-    if (isAnalyst) {
+    if (isAssignee) {
       if (['ASSIGNED','NEW','REOPENED'].indexOf(t.status) >= 0) actions.push('<button class="btn primary small" id="actStart">Start work</button>');
       if (t.status === 'IN_PROGRESS') {
         actions.push('<button class="btn small" id="actHold">Put on hold</button>');
         actions.push('<button class="btn success small" id="actResolve">Mark resolved</button>');
       }
       if (t.status === 'ON_HOLD') actions.push('<button class="btn primary small" id="actResume">Resume</button>');
-      if (t.status !== 'CLOSED') actions.push('<button class="btn small" id="actReassign">Request reassignment</button>');
+      if (role === 'ANALYST' && t.status !== 'CLOSED') actions.push('<button class="btn small" id="actReassign">Request reassignment</button>');
     }
     if (isOwner && t.status === 'RESOLVED') actions.push('<button class="btn success small" id="actClose">Accept &amp; close</button>');
     if (isOwner && ['RESOLVED','CLOSED'].indexOf(t.status) >= 0) actions.push('<button class="btn small" id="actReopen">Reopen</button>');
@@ -720,8 +732,8 @@
   function assignModal(t) {
     call('myAnalysts', {}).then(function (analysts) {
       if (!analysts.length) { toast('No analysts in this cluster yet.', 'err'); return; }
-      openModal('Assign analyst', '<p class="muted">Ticket ' + h(t.ticketId) + ' · ' + h(t.clusterId) + '</p>' +
-        '<div class="field"><label>Associate Analyst</label><select id="selAnalyst">' +
+      openModal('Assign / take ticket', '<p class="muted">Ticket ' + h(t.ticketId) + ' · ' + h(t.clusterId) + '</p>' +
+        '<div class="field"><label>Assign to</label><select id="selAnalyst">' +
           analysts.map(function (a) { return '<option value="' + h(a.email) + '">' + h(a.name) + ' (' + h(a.email) + ')</option>'; }).join('') +
         '</select></div><div class="field"><label>Note (optional)</label><input id="assignNote"></div>',
         '<button class="btn" data-close-modal>Cancel</button><button class="btn primary" id="assignGo">Assign</button>');
