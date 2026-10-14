@@ -4,47 +4,62 @@
  * Config tab, and ensures the first admin account exists.
  *
  * Run `setup()` once from the Apps Script editor.
+ *
+ * IMPORTANT: the header/order tables below are built INSIDE the functions (not
+ * as top-level statements). Apps Script runs every file's top-level code, and
+ * if this file happens to load before Config.gs then `SHEETS` would still be
+ * undefined -> "Cannot read properties of undefined (reading 'USERS')".
+ * Building them lazily makes the script independent of file load order.
  */
 
-var HEADERS = {};
-HEADERS[SHEETS.USERS] = [
-  'UserID', 'Name', 'Email', 'Phone', 'Department', 'DefaultPriority', 'Role',
-  'ClusterID', 'ReportsTo', 'Status', 'CreatedAt', 'LastLoginAt'
-];
-HEADERS[SHEETS.CLUSTERS] = ['ClusterID', 'ClusterName', 'CBA_Email', 'Status'];
-HEADERS[SHEETS.TICKETS] = [
-  'TicketID', 'Title', 'Description', 'Category', 'Priority', 'Status',
-  'RaisedByEmail', 'RaisedByName', 'RaisedByPhone', 'Department', 'ClusterID',
-  'CBA_Email', 'AnalystEmail', 'ApprovalRequired', 'ApprovalStatus', 'ApprovedBy',
-  'AttachmentLinks', 'DueAt', 'CreatedAt', 'UpdatedAt', 'ResolvedAt', 'ClosedAt',
-  'Rating', 'Feedback'
-];
-HEADERS[SHEETS.LOGS] = [
-  'LogID', 'TicketID', 'Action', 'ByEmail', 'ByRole', 'OldValue', 'NewValue', 'Note', 'Timestamp'
-];
-HEADERS[SHEETS.COMMENTS] = ['CommentID', 'TicketID', 'ByEmail', 'ByName', 'Text', 'Timestamp'];
-HEADERS[SHEETS.APPROVALS] = [
-  'ApprovalID', 'TicketID', 'RequestedByEmail', 'ApproverEmail', 'TokenHash', 'Status',
-  'RequestNote', 'DecisionNote', 'RequestedAt', 'ExpiresAt', 'DecidedAt'
-];
-HEADERS[SHEETS.REASSIGN] = [
-  'ReqID', 'TicketID', 'FromAnalyst', 'ToAnalyst', 'Reason', 'Status', 'CBA_Email',
-  'DecisionNote', 'RequestedAt', 'DecidedAt'
-];
-HEADERS[SHEETS.OTP] = ['Email', 'OtpHash', 'ExpiresAt', 'Attempts', 'CreatedAt'];
-HEADERS[SHEETS.SESSIONS] = ['TokenHash', 'Email', 'Role', 'CreatedAt', 'ExpiresAt', 'LastSeenAt'];
-HEADERS[SHEETS.ACTIVITY] = ['Timestamp', 'Email', 'Role', 'Event', 'Meta'];
-HEADERS[SHEETS.CONFIG] = ['Key', 'Value'];
+/** Column headers for every sheet, keyed by sheet name. */
+function portalHeaders_() {
+  var HEADERS = {};
+  HEADERS[SHEETS.USERS] = [
+    'UserID', 'Name', 'Email', 'Phone', 'Department', 'DefaultPriority', 'Role',
+    'ClusterID', 'ReportsTo', 'Status', 'CreatedAt', 'LastLoginAt'
+  ];
+  HEADERS[SHEETS.CLUSTERS] = ['ClusterID', 'ClusterName', 'CBA_Email', 'Status'];
+  HEADERS[SHEETS.TICKETS] = [
+    'TicketID', 'Title', 'Description', 'Category', 'Priority', 'Status',
+    'RaisedByEmail', 'RaisedByName', 'RaisedByPhone', 'Department', 'ClusterID',
+    'CBA_Email', 'AnalystEmail', 'ApprovalRequired', 'ApprovalStatus', 'ApprovedBy',
+    'AttachmentLinks', 'DueAt', 'CreatedAt', 'UpdatedAt', 'ResolvedAt', 'ClosedAt',
+    'Rating', 'Feedback'
+  ];
+  HEADERS[SHEETS.LOGS] = [
+    'LogID', 'TicketID', 'Action', 'ByEmail', 'ByRole', 'OldValue', 'NewValue', 'Note', 'Timestamp'
+  ];
+  HEADERS[SHEETS.COMMENTS] = ['CommentID', 'TicketID', 'ByEmail', 'ByName', 'Text', 'Timestamp'];
+  HEADERS[SHEETS.APPROVALS] = [
+    'ApprovalID', 'TicketID', 'RequestedByEmail', 'ApproverEmail', 'TokenHash', 'Status',
+    'RequestNote', 'DecisionNote', 'RequestedAt', 'ExpiresAt', 'DecidedAt'
+  ];
+  HEADERS[SHEETS.REASSIGN] = [
+    'ReqID', 'TicketID', 'FromAnalyst', 'ToAnalyst', 'Reason', 'Status', 'CBA_Email',
+    'DecisionNote', 'RequestedAt', 'DecidedAt'
+  ];
+  HEADERS[SHEETS.OTP] = ['Email', 'OtpHash', 'ExpiresAt', 'Attempts', 'CreatedAt'];
+  HEADERS[SHEETS.SESSIONS] = ['TokenHash', 'Email', 'Role', 'CreatedAt', 'ExpiresAt', 'LastSeenAt'];
+  HEADERS[SHEETS.ACTIVITY] = ['Timestamp', 'Email', 'Role', 'Event', 'Meta'];
+  HEADERS[SHEETS.CONFIG] = ['Key', 'Value'];
+  return HEADERS;
+}
 
-var SHEET_ORDER = [
-  SHEETS.USERS, SHEETS.CLUSTERS, SHEETS.TICKETS, SHEETS.LOGS, SHEETS.COMMENTS,
-  SHEETS.APPROVALS, SHEETS.REASSIGN, SHEETS.OTP, SHEETS.SESSIONS,
-  SHEETS.ACTIVITY, SHEETS.CONFIG
-];
+/** The order in which sheets should be created. */
+function portalSheetOrder_() {
+  return [
+    SHEETS.USERS, SHEETS.CLUSTERS, SHEETS.TICKETS, SHEETS.LOGS, SHEETS.COMMENTS,
+    SHEETS.APPROVALS, SHEETS.REASSIGN, SHEETS.OTP, SHEETS.SESSIONS,
+    SHEETS.ACTIVITY, SHEETS.CONFIG
+  ];
+}
 
 /** Creates/repairs every sheet, seeds Config + admin. Safe to re-run. */
 function setup() {
   var ss = Db.ss();
+  var HEADERS = portalHeaders_();
+  var SHEET_ORDER = portalSheetOrder_();
 
   SHEET_ORDER.forEach(function (name) {
     var sh = ss.getSheetByName(name);
