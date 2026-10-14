@@ -58,6 +58,7 @@ var PRIVATE_API = {
   adminSaveCluster: { fn: function (u, p) { return Admin.saveCluster(u, p); }, roles: ['ADMIN'] },
   adminAnalytics:   { fn: function (u, p) { return Admin.analytics(u, p); }, roles: ['ADMIN'] },
   adminActivity:    { fn: function (u, p) { return Admin.activity(u, p); }, roles: ['ADMIN'] },
+  adminMailQueue:   { fn: function (u, p) { return Admin.mailQueue(u, p); }, roles: ['ADMIN'] },
   adminExportCsv:   { fn: function (u, p) { return Admin.exportCsv(u, p); }, roles: ['ADMIN'] },
 
   dashboard:        { fn: function (u) { return Tickets.dashboard(u); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] }

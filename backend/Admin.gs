@@ -323,6 +323,32 @@ var Admin = {
     return { range: range, users: Admin.rankActivity_(events, Db.all(SHEETS.USERS)) };
   },
 
+  /** Ops diagnostic: recent outbound mail + whether the drain trigger is live. */
+  mailQueue: function (user, p) {
+    var limit = Math.min(Number((p && p.limit) || 20), 100);
+    var all = Db.all(SHEETS.MAILQUEUE);
+    var rows = all.slice(-limit).map(function (r) {
+      return {
+        queueId: r.QueueID, to: r.To, subject: r.Subject, status: r.Status,
+        attempts: r.Attempts, createdAt: r.CreatedAt, sentAt: r.SentAt, error: r.Error
+      };
+    });
+    var triggers = [];
+    try {
+      triggers = ScriptApp.getProjectTriggers().map(function (t) {
+        try { return t.getHandlerFunction(); } catch (e) { return '?'; }
+      });
+    } catch (e) {}
+    return {
+      enabled: MAIL_QUEUE_ENABLED,
+      pending: all.filter(function (r) { return String(r.Status || 'PENDING').toUpperCase() === 'PENDING'; }).length,
+      total: all.length,
+      drainTriggerInstalled: triggers.indexOf('drainMailQueue') >= 0,
+      triggers: triggers,
+      rows: rows
+    };
+  },
+
   rankActivity_: function (events, users) {
     var stats = {};
     function bucket(email, name, role) {

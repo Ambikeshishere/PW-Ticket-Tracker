@@ -293,6 +293,15 @@ const stillPending = ctx.Db.find(ctx.SHEETS.MAILQUEUE, (r) => String(r.Status) =
 t.eq('queue is empty after drain', stillPending.length, 0);
 ctx.MAIL_QUEUE_ENABLED = false;
 
+/* --------------------------- admin mail queue ------------------------ */
+t.section('admin mail queue diagnostic');
+const mq = call('adminMailQueue', adminToken, {});
+t.eq('adminMailQueue -> ok:true', mq.ok, true);
+t.ok('adminMailQueue reports queue state', mq.data && typeof mq.data.total === 'number' && typeof mq.data.pending === 'number');
+t.ok('adminMailQueue lists recent rows', Array.isArray(mq.data.rows));
+const mqDenied = call('adminMailQueue', cbaToken, {});
+t.eq('adminMailQueue is admin-only -> ok:false', mqDenied.ok, false);
+
 /* ------------------------------- report ------------------------------ */
 console.log('\n' + C.b + '────────────────────────────' + C.x);
 console.log(C.b + 'Passed: ' + C.g + pass + C.x + C.b + '   Failed: ' + (fail ? C.r : C.g) + fail + C.x);

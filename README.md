@@ -256,7 +256,7 @@ Private routes: `logout`, `me`, `createTicket`, `listTickets`, `getTicket`,
 `rateTicket`, `myAnalysts`, `clusterAnalysts`, `saveAnalyst`, `removeAnalyst`,
 `requestApproval`, `requestReassign`, `listReassign`,
 `decideReassign`, `teamWorkload`, `adminUsers`, `adminSaveUser`, `adminClusters`,
-`adminSaveCluster`, `adminAnalytics`, `adminActivity`, `adminExportCsv`, `dashboard`.
+`adminSaveCluster`, `adminAnalytics`, `adminActivity`, `adminMailQueue`, `adminExportCsv`, `dashboard`.
 
 ### Lazy bootstrap
 `handle()` calls `ensureSetup_()` first. On a brand-new deployment the very first
@@ -531,7 +531,7 @@ npm run serve     # static server on :8080
   `dev/tests.js` (96 assertions: setup, signup, OTP, sessions, tickets, assignment,
   requester self-assign/close, status flow, approvals, reassignment, close/rate,
   analytics, and the `api()` router including role denial).
-- `dev/backend-test.js` — drives the JSON API end-to-end (86 assertions, incl. CBA
+- `dev/backend-test.js` — drives the JSON API end-to-end (90 assertions, incl. CBA
   analyst management, admin cross-cluster assign, USER self-assign + close, the
   setup-version guard, email deep links, and the mail queue).
 - `dev/web-test.js` — exercises the static front-end against `js/api.local.js`
