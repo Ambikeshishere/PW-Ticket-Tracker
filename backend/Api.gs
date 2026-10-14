@@ -48,6 +48,10 @@ var PRIVATE_API = {
   decideReassign:   { fn: function (u, p) { return Reassign.decide(u, p); }, roles: ['CBA', 'ADMIN'] },
   teamWorkload:     { fn: function (u) { return Admin.teamWorkload(u); }, roles: ['CBA', 'ADMIN'] },
 
+  clusterAnalysts:  { fn: function (u) { return Admin.clusterAnalysts(u); }, roles: ['CBA', 'ADMIN'] },
+  saveAnalyst:      { fn: function (u, p) { return Admin.saveAnalyst(u, p); }, roles: ['CBA', 'ADMIN'] },
+  removeAnalyst:    { fn: function (u, p) { return Admin.removeAnalyst(u, p); }, roles: ['CBA', 'ADMIN'] },
+
   adminUsers:       { fn: function () { return Admin.listUsers(); }, roles: ['ADMIN'] },
   adminSaveUser:    { fn: function (u, p) { return Admin.saveUser(u, p); }, roles: ['ADMIN'] },
   adminClusters:    { fn: function () { return Admin.listClusters(); }, roles: ['ADMIN'] },

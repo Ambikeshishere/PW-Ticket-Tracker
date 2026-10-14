@@ -17,6 +17,8 @@
   var PRIORITIES = ['Low', 'Medium', 'High'];
   var STATUSES = ['NEW', 'ASSIGNED', 'IN_PROGRESS', 'PENDING_APPROVAL', 'ON_HOLD', 'RESOLVED', 'CLOSED', 'REOPENED'];
   var ROLES = { USER: 'USER', CBA: 'CBA', ANALYST: 'ANALYST', ADMIN: 'ADMIN' };
+  var ADMIN_CLUSTER_ID = 'CL-ADMIN';
+  var ADMIN_CLUSTER_NAME = 'Admin';
 
   function fail(msg) { var e = new Error(msg); e._api = true; throw e; }
 
@@ -285,12 +287,13 @@
       var actorRole = String(user.Role).toUpperCase();
       var isSelf = normEmail(target.Email) === normEmail(user.Email);
       var sameCluster = String(target.ClusterID) === String(t.ClusterID);
+      // An admin can hand a ticket to any active worker, in any cluster.
+      if (actorRole === 'ADMIN' && (role === 'CBA' || role === 'ANALYST')) return target;
       if (role === 'ANALYST') {
         if (!sameCluster) fail('That analyst is not in this ticket\'s cluster.');
         return target;
       }
       if (role === 'CBA' && isSelf && sameCluster) return target;
-      if (actorRole === 'ADMIN' && (role === 'CBA' || role === 'ANALYST') && sameCluster) return target;
       fail('Assign to an Associate Analyst in this cluster, or take it yourself.');
     },
 
@@ -316,13 +319,26 @@
 
     myAnalysts: function (user) {
       var role = String(user.Role).toUpperCase();
+      var clusters = {};
+      Store.all('clusters').forEach(function (c) { clusters[String(c.ClusterID)] = c.ClusterName; });
       var list = Store.all('users').filter(function (u) {
-        if (String(u.Role).toUpperCase() !== 'ANALYST' || String(u.Status).toUpperCase() !== 'ACTIVE') return false;
-        if (role === 'ADMIN') return true;
+        if (String(u.Status).toUpperCase() !== 'ACTIVE') return false;
+        var r = String(u.Role).toUpperCase();
+        if (role === 'ADMIN') return r === 'ANALYST' || r === 'CBA';
+        if (r !== 'ANALYST') return false;
         return String(u.ClusterID) === String(user.ClusterID);
-      }).map(function (u) { return { email: normEmail(u.Email), name: u.Name, clusterId: u.ClusterID }; });
+      }).map(function (u) {
+        return {
+          email: normEmail(u.Email), name: u.Name, role: String(u.Role).toUpperCase(),
+          clusterId: u.ClusterID || '', clusterName: clusters[String(u.ClusterID)] || u.ClusterID || ''
+        };
+      });
       if (role === 'CBA') {
-        list.unshift({ email: normEmail(user.Email), name: user.Name + ' (me)', clusterId: user.ClusterID, self: true });
+        list.unshift({
+          email: normEmail(user.Email), name: user.Name + ' (me)', role: 'CBA',
+          clusterId: user.ClusterID || '',
+          clusterName: clusters[String(user.ClusterID)] || user.ClusterID || '', self: true
+        });
       }
       return list;
     },
@@ -605,6 +621,79 @@
     listClusters: function () {
       return Store.all('clusters').map(function (c) { return { clusterId: String(c.ClusterID), name: c.ClusterName, cbaEmail: normEmail(c.CBA_Email), status: String(c.Status || 'ACTIVE').toUpperCase() }; });
     },
+    clusterAnalysts: function (user) {
+      var role = String(user.Role).toUpperCase();
+      return Store.all('users').filter(function (u) {
+        if (String(u.Role).toUpperCase() !== 'ANALYST') return false;
+        if (role === 'ADMIN') return true;
+        return String(u.ClusterID) === String(user.ClusterID);
+      }).map(function (u) {
+        return {
+          email: normEmail(u.Email), name: u.Name || '', phone: u.Phone || '',
+          department: u.Department || '', clusterId: u.ClusterID || '',
+          reportsTo: normEmail(u.ReportsTo), status: String(u.Status || 'ACTIVE').toUpperCase(),
+          lastLoginAt: u.LastLoginAt || ''
+        };
+      }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+    },
+    saveAnalyst: function (user, p) {
+      var a = p.analyst || {};
+      var email = normEmail(a.email);
+      if (!email) fail('Email is required.');
+      var actorRole = String(user.Role).toUpperCase();
+      var clusterId = actorRole === 'ADMIN'
+        ? String(a.clusterId || user.ClusterID || ADMIN_CLUSTER_ID)
+        : String(user.ClusterID);
+      if (!clusterId) fail('You are not assigned to a cluster yet.');
+      var status = String(a.status || 'ACTIVE').toUpperCase() === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE';
+      var existing = Store.findOne('users', function (x) { return normEmail(x.Email) === email; });
+      if (existing) {
+        if (String(existing.Role).toUpperCase() !== 'ANALYST') {
+          fail('That email belongs to a ' + String(existing.Role).toUpperCase() + ', not an analyst.');
+        }
+        if (actorRole !== 'ADMIN' && String(existing.ClusterID) !== String(user.ClusterID)) {
+          fail('That analyst is not in your cluster.');
+        }
+        var statusChanged = String(existing.Status || 'ACTIVE').toUpperCase() !== status;
+        Store.update('users', existing, {
+          Name: a.name || existing.Name,
+          Phone: a.phone !== undefined ? a.phone : existing.Phone,
+          Department: a.department !== undefined ? a.department : existing.Department,
+          ClusterID: clusterId,
+          ReportsTo: a.reportsTo !== undefined ? normEmail(a.reportsTo) : existing.ReportsTo,
+          Status: status
+        });
+        if (statusChanged) Auth.killSessions(email);
+        Auth.logActivity(user, 'ANALYST_UPDATED', email + ' (' + clusterId + ')');
+        return { email: email, updated: true };
+      }
+      if (!a.name || !String(a.name).trim()) fail('Name is required for a new analyst.');
+      Store.insert('users', {
+        UserID: Store.nextId('U-', 'users', 'UserID'), Name: String(a.name).trim(), Email: email,
+        Phone: a.phone || '', Department: a.department || '', DefaultPriority: 'Medium',
+        Role: ROLES.ANALYST, ClusterID: clusterId,
+        ReportsTo: normEmail(a.reportsTo) || normEmail(user.Email),
+        Status: status, CreatedAt: U.now(), LastLoginAt: ''
+      });
+      Auth.logActivity(user, 'ANALYST_CREATED', email + ' (' + clusterId + ')');
+      Mail.send(email, 'Welcome to ' + cfg('APP_NAME', 'PW Ticket Portal'), 'Hi ' + a.name + ', your analyst account is ready.');
+      return { email: email, created: true };
+    },
+    removeAnalyst: function (user, p) {
+      var email = normEmail(p.email);
+      if (!email) fail('Email is required.');
+      var target = Store.findOne('users', function (x) { return normEmail(x.Email) === email; });
+      if (!target) fail('Analyst not found.');
+      if (String(target.Role).toUpperCase() !== 'ANALYST') fail('That user is not an analyst.');
+      var actorRole = String(user.Role).toUpperCase();
+      if (actorRole !== 'ADMIN' && String(target.ClusterID) !== String(user.ClusterID)) {
+        fail('That analyst is not in your cluster.');
+      }
+      Store.update('users', target, { Status: 'INACTIVE' });
+      Auth.killSessions(email);
+      Auth.logActivity(user, 'ANALYST_REMOVED', email);
+      return { email: email, removed: true };
+    },
     saveCluster: function (user, p) {
       var c = p.cluster || {};
       var id = String(c.clusterId || '').trim();
@@ -761,6 +850,9 @@
     listReassign: { fn: function (u) { return Reassign.list(u); }, roles: ['CBA', 'ADMIN'] },
     decideReassign: { fn: function (u, p) { return Reassign.decide(u, p); }, roles: ['CBA', 'ADMIN'] },
     teamWorkload: { fn: function (u) { return Admin.teamWorkload(u); }, roles: ['CBA', 'ADMIN'] },
+    clusterAnalysts: { fn: function (u) { return Admin.clusterAnalysts(u); }, roles: ['CBA', 'ADMIN'] },
+    saveAnalyst: { fn: function (u, p) { return Admin.saveAnalyst(u, p); }, roles: ['CBA', 'ADMIN'] },
+    removeAnalyst: { fn: function (u, p) { return Admin.removeAnalyst(u, p); }, roles: ['CBA', 'ADMIN'] },
     adminUsers: { fn: function () { return Admin.listUsers(); }, roles: ['ADMIN'] },
     adminSaveUser: { fn: function (u, p) { return Admin.saveUser(u, p); }, roles: ['ADMIN'] },
     adminClusters: { fn: function () { return Admin.listClusters(); }, roles: ['ADMIN'] },

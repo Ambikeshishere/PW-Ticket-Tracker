@@ -13,7 +13,9 @@ A ticket / request tracking portal for the PW Analytics team.
 > (`{api, token, payload}` → `{ok, data|error}`). Sheet ke 11 tabs database hain.
 > Login email-OTP se, session token hash banake `Sessions` tab me. Roles:
 > USER / CBA / ANALYST / ADMIN. Ticket raise → CBA assign → ANALYST kaam → USER
-> close. External approval email link se, reassignment CBA approval se.
+> close. External approval email link se, reassignment CBA approval se. CBA apne
+> cluster ke analysts add/remove kar sakta hai; Admin kisi bhi cluster me assign
+> kar sakta hai. UI PW brand colours (Royal Blue + Bright Sun) me hai.
 
 ---
 
@@ -24,7 +26,7 @@ A ticket / request tracking portal for the PW Analytics team.
 | File | Responsibility |
 |------|----------------|
 | `index.html` | The SPA shell: auth screen, app shell, approval screen, drawer/modal/toast containers. Loads `js/config.js` first. |
-| `styles.css` | All CSS (light + dark theme via CSS variables). |
+| `styles.css` | All CSS (light + dark theme via CSS variables). Uses the **PW brand palette** — Royal Blue `#5A4BDA`, Bright Sun `#FBDE47`, Evening Sea `#024148` — and the Gilroy font. |
 | `js/config.js` | **The only file you edit to point the portal at your backend.** Sets `window.PW_CONFIG.API_URL`. |
 | `js/api.js` | Network client. `API.call(name, payload)` → POSTs JSON to `API_URL` (as `text/plain`), falls back to JSONP GET. Holds the session token. |
 | `js/ui.js` | The whole UI: auth wiring, role-based nav, every view, ticket drawer, modals, approval page. |
@@ -71,6 +73,8 @@ defined in `Setup.gs` (`portalHeaders_()`).
 `ClusterID, ClusterName, CBA_Email, Status`
 - One row per business cluster. `CBA_Email` is the Cluster Business Analyst who
   triages tickets raised in that cluster.
+- `setup()` seeds a built-in **Admin** cluster (`CL-ADMIN`) and puts the admin user
+  in it, so the admin always has a home cluster.
 
 ### `Tickets`
 `TicketID, Title, Description, Category, Priority, Status, RaisedByEmail, RaisedByName, RaisedByPhone, Department, ClusterID, CBA_Email, AnalystEmail, ApprovalRequired, ApprovalStatus, ApprovedBy, AttachmentLinks, DueAt, CreatedAt, UpdatedAt, ResolvedAt, ClosedAt, Rating, Feedback`
@@ -117,13 +121,14 @@ defined in `Setup.gs` (`portalHeaders_()`).
 | Sign up (self) | ✅ | – | – | – |
 | Raise a ticket | ✅ | – | ✅ | ✅ |
 | See tickets | own only | assigned only | own cluster | all |
-| Assign analyst | – | – | ✅ | ✅ |
+| Assign analyst | – | – | ✅ own cluster | ✅ any cluster |
 | Take a ticket (self-assign) | – | – | ✅ | – |
 | Move status | – | own tickets | cluster | ✅ |
 | Request external approval | – | – | ✅ | ✅ |
 | Request reassignment | – | own tickets | – | – |
 | Approve reassignment | – | – | ✅ | ✅ |
 | Close / reopen / rate | own | – | – | ✅ |
+| Manage cluster analysts | – | – | ✅ own cluster | ✅ any cluster |
 | Manage users / clusters | – | – | – | ✅ |
 | Analytics / activity / CSV | – | – | – | ✅ |
 
@@ -140,11 +145,25 @@ ticket themselves** (self-assign), and **hand it to an analyst** in their cluste
   email) so the ticket can be assigned the moment it is created.
 - `assignTicket` accepts either an ACTIVE ANALYST in the ticket's cluster **or the
   acting CBA themselves** (`Tickets.resolveAssignee_`). An ADMIN may assign to any
-  ACTIVE CBA/ANALYST in the cluster.
+  ACTIVE CBA/ANALYST in **any** cluster.
 - `myAnalysts` returns the cluster's analysts **plus the CBA themselves** (flagged
-  `self: true`), so the assign dropdown offers "take it myself".
+  `self: true`), so the assign dropdown offers "take it myself". For an ADMIN it
+  returns every ACTIVE CBA/ANALYST across all clusters.
 - Once self-assigned, the CBA sees the same work actions as an analyst
   (Start / Hold / Resolve) and can close/reopen/rate tickets they raised.
+
+### Admin cluster & analyst management
+- `setup()` seeds a built-in **Admin** cluster (`CL-ADMIN`) and puts the seeded
+  admin (`ADMIN_EMAIL`) in it, so the admin always has a home cluster. Existing
+  installs are repaired on the next `setup()` run.
+- A **CBA** manages the analysts of **their own cluster** from the **My Analysts**
+  view: `clusterAnalysts` lists them, `saveAnalyst` adds/edits one (role is forced
+  to `ANALYST`, cluster forced to the CBA's own), and `removeAnalyst` soft-deletes
+  (sets `Status = INACTIVE` and kills the analyst's sessions).
+- An **ADMIN** can do the same for **any** cluster (the cluster is chosen in the
+  form), and can assign tickets to any CBA/analyst in any cluster.
+- A CBA can never edit or remove an analyst outside their cluster, and can never
+  promote a non-analyst (e.g. a `USER`) into an analyst.
 
 
 ---
@@ -212,7 +231,8 @@ Every call returns `{ ok: true, data }` or `{ ok: false, error }`.
 
 Private routes: `logout`, `me`, `createTicket`, `listTickets`, `getTicket`,
 `addComment`, `assignTicket`, `updateStatus`, `closeTicket`, `reopenTicket`,
-`rateTicket`, `myAnalysts`, `requestApproval`, `requestReassign`, `listReassign`,
+`rateTicket`, `myAnalysts`, `clusterAnalysts`, `saveAnalyst`, `removeAnalyst`,
+`requestApproval`, `requestReassign`, `listReassign`,
 `decideReassign`, `teamWorkload`, `adminUsers`, `adminSaveUser`, `adminClusters`,
 `adminSaveCluster`, `adminAnalytics`, `adminActivity`, `adminExportCsv`, `dashboard`.
 
@@ -395,7 +415,8 @@ spreadsheet on first run.
    ```
 3. Open the site, sign in with the admin email (`ADMIN_EMAIL`) via OTP.
 4. As admin: create **Clusters** (with a CBA email), then create **CBA** and
-   **ANALYST** users and assign them to clusters.
+   **ANALYST** users and assign them to clusters. (The built-in **Admin** cluster is
+   seeded automatically; CBAs can add their own cluster's analysts from **My Analysts**.)
 
 ### First-run checklist
 - [ ] `clasp push` + `clasp deploy` succeeded
@@ -440,12 +461,13 @@ npm run serve     # static server on :8080
   `PropertiesService`, `CacheService`, `LockService`, `MailApp`, `Utilities`,
   `ScriptApp`, etc.
 - `dev/run.js` — loads the real `backend/*.gs` files into a `vm` context and runs
-  `dev/tests.js` (72 assertions: setup, signup, OTP, sessions, tickets, assignment,
+  `dev/tests.js` (83 assertions: setup, signup, OTP, sessions, tickets, assignment,
   status flow, approvals, reassignment, close/rate, analytics, and the `api()` router
   including role denial).
-- `dev/backend-test.js` — drives the JSON API end-to-end (42 assertions).
+- `dev/backend-test.js` — drives the JSON API end-to-end (66 assertions, incl. CBA
+  analyst management + admin cross-cluster assign).
 - `dev/web-test.js` — exercises the static front-end against `js/api.local.js`
-  (64 assertions).
+  (84 assertions).
 - `dev/check-client.js` — verifies every `call('name')` in `js/ui.js` has a route in
   `backend/Api.gs`, and every `$('id')` referenced in `js/ui.js` exists in `index.html`.
 - `dev/mock-server.js` — a tiny HTTP server that loads `backend/*.gs` and serves the

@@ -149,6 +149,7 @@
     Store.setCfg('AUTO_CLOSE_DAYS', '3');
 
     var clusters = [
+      { ClusterID: 'CL-ADMIN', ClusterName: 'Admin', CBA_Email: 'ambikesh.srivastava@pw.live', Status: 'ACTIVE' },
       { ClusterID: 'CL-00001', ClusterName: 'Sales Analytics', CBA_Email: 'cba@pw.live', Status: 'ACTIVE' },
       { ClusterID: 'CL-00002', ClusterName: 'Marketing Analytics', CBA_Email: 'cba2@pw.live', Status: 'ACTIVE' },
       { ClusterID: 'CL-00003', ClusterName: 'Academics Analytics', CBA_Email: 'cba@pw.live', Status: 'ACTIVE' }
@@ -164,7 +165,7 @@
       });
     }
 
-    user('Ambikesh Srivastava', 'ambikesh.srivastava@pw.live', 'ADMIN', '', 'Analytics');
+    user('Ambikesh Srivastava', 'ambikesh.srivastava@pw.live', 'ADMIN', 'CL-ADMIN', 'Analytics');
     user('Priya CBA', 'cba@pw.live', 'CBA', 'CL-00001', 'Analytics');
     user('Rahul CBA', 'cba2@pw.live', 'CBA', 'CL-00002', 'Analytics');
     user('Ana Lyst', 'analyst@pw.live', 'ANALYST', 'CL-00001', 'Analytics');

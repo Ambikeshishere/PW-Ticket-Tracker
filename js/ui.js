@@ -186,6 +186,7 @@
       items.push({ id: 'reassign', label: 'Reassign Requests', icon: '⇄' });
       items.push({ id: 'workload', label: 'Team Workload', icon: '⚖' });
     }
+    if (r === 'CBA') items.push({ id: 'analysts', label: 'My Analysts', icon: '🧑‍🔬' });
     if (r === 'ADMIN') {
       items.push({ id: 'users', label: 'Users', icon: '👥' });
       items.push({ id: 'clusters', label: 'Clusters', icon: '🧩' });
@@ -213,7 +214,7 @@
       dashboard: renderDashboard, tickets: renderTickets, new: renderNewTicket,
       approvals: renderApprovals, reassign: renderReassign, workload: renderWorkload,
       users: renderUsers, clusters: renderClusters, activity: renderActivity,
-      analytics: renderAnalytics
+      analytics: renderAnalytics, analysts: renderAnalysts
     };
     (map[v] || function () { $('content').innerHTML = '<div class="empty">Unknown view</div>'; })();
     refreshBadge();
@@ -339,7 +340,9 @@
         '</div>' +
         '<div class="field"><label>Department</label><input id="ntDept" value="' + h(state.user.department || '') + '"></div>' +
         (canAssign ? '<div class="field"><label>Assign to</label><select id="ntAssign"><option value="">Leave unassigned</option></select>' +
-          '<div class="muted" style="font-size:12px;margin-top:4px">Take it yourself, or hand it to an analyst in your cluster.</div></div>' : '') +
+          '<div class="muted" style="font-size:12px;margin-top:4px">' +
+            (state.user.role === 'ADMIN' ? 'Hand it to any CBA or analyst, in any cluster.' : 'Take it yourself, or hand it to an analyst in your cluster.') +
+          '</div></div>' : '') +
         '<div class="field"><label>Description</label><textarea id="ntDesc" placeholder="Describe your request in detail…"></textarea></div>' +
         '<div class="inline" style="justify-content:flex-end">' +
           '<button class="btn" id="ntCancel">Cancel</button>' +
@@ -452,6 +455,63 @@
   }
 
   /* ------------------------------ users ------------------------------ */
+  /* --------------------------- my analysts --------------------------- */
+  function renderAnalysts() {
+    call('clusterAnalysts', {}).then(function (list) {
+      var rows = list.map(function (a) {
+        return '<tr><td><b>' + h(a.name) + '</b><div class="muted" style="font-size:12px">' + h(a.email) + '</div></td>' +
+          '<td>' + h(a.department || '—') + '</td><td>' + h(a.phone || '—') + '</td>' +
+          '<td class="muted" style="font-size:12px">' + fmt(a.lastLoginAt) + '</td>' +
+          '<td>' + (a.status === 'ACTIVE' ? '<span class="badge ap-APPROVED">Active</span>' : '<span class="badge ap-REJECTED">Inactive</span>') + '</td>' +
+          '<td><button class="btn small" data-edit="' + h(a.email) + '">Edit</button>' +
+          (a.status === 'ACTIVE' ? ' <button class="btn small danger" data-remove="' + h(a.email) + '">Remove</button>' : '') + '</td></tr>';
+      }).join('');
+      $('content').innerHTML =
+        '<div class="page-head"><h2>My Analysts</h2><button class="btn primary" id="btnAddAnalyst">＋ Add analyst</button></div>' +
+        '<p class="muted" style="margin:-6px 0 14px">Analysts in your cluster. Add someone new, or remove an analyst who has left.</p>' +
+        '<div class="card"><div class="table-wrap">' +
+          (list.length ? '<table class="tbl"><thead><tr><th>Name</th><th>Department</th><th>Phone</th><th>Last login</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' : '<div class="empty">No analysts yet. Add your first one.</div>') +
+        '</div></div>';
+      $('btnAddAnalyst').onclick = function () { analystModal(null); };
+      Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function (b) {
+        b.onclick = function () {
+          var e = b.getAttribute('data-edit');
+          analystModal(list.filter(function (x) { return x.email === e; })[0]);
+        };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-remove]'), function (b) {
+        b.onclick = function () {
+          var e = b.getAttribute('data-remove');
+          if (!window.confirm('Remove ' + e + ' from your cluster? They will no longer be able to log in.')) return;
+          call('removeAnalyst', { email: e })
+            .then(function () { toast('Analyst removed', 'ok'); renderAnalysts(); })
+            .catch(function (err) { toast(err.message, 'err'); });
+        };
+      });
+    }).catch(function (e) { $('content').innerHTML = '<div class="empty">' + h(e.message) + '</div>'; });
+  }
+  function analystModal(a) {
+    a = a || { email: '', name: '', phone: '', department: '', status: 'ACTIVE' };
+    openModal(a.email ? 'Edit analyst' : 'Add analyst', '' +
+      '<div class="grid2"><div class="field"><label>Name</label><input id="aName" value="' + h(a.name) + '"></div>' +
+      '<div class="field"><label>Email</label><input id="aEmail" value="' + h(a.email) + '"' + (a.email ? ' disabled' : '') + ' placeholder="analyst@pw.live"></div></div>' +
+      '<div class="grid2"><div class="field"><label>Phone</label><input id="aPhone" value="' + h(a.phone) + '"></div>' +
+      '<div class="field"><label>Department</label><input id="aDept" value="' + h(a.department) + '"></div></div>' +
+      '<div class="field"><label>Status</label><select id="aStatus">' +
+        ['ACTIVE','INACTIVE'].map(function (s) { return '<option' + (a.status === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') +
+      '</select></div>' +
+      '<p class="muted" style="font-size:12px">They sign in with an email OTP — no password needed.</p>',
+      '<button class="btn" data-close-modal>Cancel</button><button class="btn primary" id="aSave">Save</button>');
+    $('aSave').onclick = function () {
+      call('saveAnalyst', { analyst: {
+        email: $('aEmail').value, name: $('aName').value, phone: $('aPhone').value,
+        department: $('aDept').value, status: $('aStatus').value
+      } }).then(function () { closeModal(); toast('Analyst saved', 'ok'); renderAnalysts(); })
+        .catch(function (e) { toast(e.message, 'err'); });
+    };
+  }
+
+  /* ---------------------------- users -------------------------------- */
   function renderUsers() {
     Promise.all([call('adminUsers', {}), call('adminClusters', {})]).then(function (res) {
       var users = res[0], clusters = res[1];

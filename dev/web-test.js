@@ -73,14 +73,14 @@ function login(email) {
 /* ============================ tests ============================ */
 section('seed data');
 eq(Store.all('users').length, 8, 'seeded 8 users');
-eq(Store.all('clusters').length, 3, 'seeded 3 clusters');
+eq(Store.all('clusters').length, 4, 'seeded 4 clusters (incl. Admin)');
 eq(Store.all('tickets').length, 4, 'seeded 4 tickets');
 eq(typeof Store.cfg('ADMIN_EMAIL'), 'string', 'config ADMIN_EMAIL set');
 ok(Store.cfg('ALLOWED_DOMAIN') === '', 'ALLOWED_DOMAIN empty (demo allows any email)');
 
 section('public: getClusters');
 const clusters = must('getClusters', null, {});
-eq(clusters.length, 3, 'getClusters returns 3');
+eq(clusters.length, 4, 'getClusters returns 4 (incl. Admin)');
 
 section('auth: OTP flow');
 const otp = must('requestOtp', null, { email: 'riya@pw.live' });
@@ -148,6 +148,22 @@ const cbaAssignOnCreate = must('createTicket', cba.token, { title: 'CBA assign o
 eq(cbaAssignOnCreate.status, 'ASSIGNED', 'assignTo on create -> ASSIGNED');
 eq(cbaAssignOnCreate.analystEmail, 'analyst@pw.live', 'assignTo on create sets analyst');
 
+section('CBA: manage cluster analysts');
+const roster = must('clusterAnalysts', cba.token, {});
+ok(roster.length >= 2 && roster.every((a) => a.clusterId === 'CL-00001'), 'CBA sees own-cluster analysts');
+const addedAn = must('saveAnalyst', cba.token, { analyst: { email: 'newanalyst@pw.live', name: 'New Analyst', department: 'Analytics' } });
+eq(addedAn.created, true, 'CBA can add an analyst');
+ok(must('clusterAnalysts', cba.token, {}).some((a) => a.email === 'newanalyst@pw.live' && a.clusterId === 'CL-00001'), 'new analyst joins the cluster');
+const removedAn = must('removeAnalyst', cba.token, { email: 'newanalyst@pw.live' });
+eq(removedAn.removed, true, 'CBA can remove an analyst');
+ok(must('clusterAnalysts', cba.token, {}).some((a) => a.email === 'newanalyst@pw.live' && a.status === 'INACTIVE'), 'removed analyst goes inactive');
+const crossSave = call('saveAnalyst', cba.token, { analyst: { email: 'sneha@pw.live', name: 'x' } });
+ok(!crossSave.ok, 'CBA cannot edit an analyst from another cluster');
+const crossRemove = call('removeAnalyst', cba.token, { email: 'sneha@pw.live' });
+ok(!crossRemove.ok, 'CBA cannot remove an analyst from another cluster');
+const userAsAnalyst = call('saveAnalyst', cba.token, { analyst: { email: 'riya@pw.live', name: 'x' } });
+ok(!userAsAnalyst.ok, 'CBA cannot turn a non-analyst into an analyst');
+
 section('ANALYST: status transitions');
 const analyst = login('analyst@pw.live');
 const t2mine = must('listTickets', analyst.token, {});
@@ -207,13 +223,22 @@ section('admin: users / clusters / analytics / mails / csv');
 const admin = login('ambikesh.srivastava@pw.live');
 eq(admin.user.role, 'ADMIN', 'admin email is ADMIN');
 const users = must('adminUsers', admin.token, {});
-eq(users.length, 8, 'adminUsers returns all users');
+ok(users.length >= 8, 'adminUsers returns all users');
+const usersBefore = users.length;
 must('adminSaveUser', admin.token, { user: { email: 'newbie@pw.live', name: 'New Bie', role: 'ANALYST', clusterId: 'CL-00001', status: 'ACTIVE' } });
-eq(must('adminUsers', admin.token, {}).length, 9, 'user created');
+eq(must('adminUsers', admin.token, {}).length, usersBefore + 1, 'user created');
 const cl = must('adminClusters', admin.token, {});
-eq(cl.length, 3, 'adminClusters returns 3');
+eq(cl.length, 4, 'adminClusters returns 4 (incl. Admin)');
 must('adminSaveCluster', admin.token, { cluster: { name: 'Growth Analytics', cbaEmail: 'cba@pw.live' } });
-eq(must('adminClusters', admin.token, {}).length, 4, 'cluster created');
+eq(must('adminClusters', admin.token, {}).length, 5, 'cluster created');
+
+section('ADMIN: assign anyone, any cluster');
+const adminAnalysts = must('myAnalysts', admin.token, {});
+ok(adminAnalysts.some((a) => a.clusterId === 'CL-00001') && adminAnalysts.some((a) => a.clusterId === 'CL-00002'), 'admin sees workers from every cluster');
+const adminTicket = must('createTicket', admin.token, { title: 'Admin dispatch', description: 'x', priority: 'Medium' });
+const crossAssigned = must('assignTicket', admin.token, { ticketId: adminTicket.ticketId, analystEmail: 'sneha@pw.live' });
+eq(crossAssigned.analystEmail, 'sneha@pw.live', 'admin can assign to another cluster');
+eq(crossAssigned.status, 'ASSIGNED', 'cross-cluster assign -> ASSIGNED');
 const an1 = must('adminAnalytics', admin.token, { days: 30 });
 ok(an1.totals.total >= 4, 'analytics totals computed');
 ok(Object.keys(an1.trend).length >= 1, 'analytics trend computed');

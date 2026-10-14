@@ -185,6 +185,42 @@ const cbaAssignOnCreate = call('createTicket', cbaToken, {
 t.eq('CBA assignTo on create -> ASSIGNED', cbaAssignOnCreate.data && cbaAssignOnCreate.data.status, 'ASSIGNED');
 t.eq('CBA assignTo on create sets analyst', cbaAssignOnCreate.data && cbaAssignOnCreate.data.analystEmail, 'analyst@pw.live');
 
+/* --------------------------- CBA analyst management ------------------ */
+t.section('CBA analyst management');
+const roster = call('clusterAnalysts', cbaToken, {});
+t.eq('clusterAnalysts -> ok:true', roster.ok, true);
+t.ok('CBA sees own-cluster analysts', Array.isArray(roster.data) && roster.data.every((a) => a.clusterId === clusterId));
+
+const addAn = call('saveAnalyst', cbaToken, { analyst: { email: 'newanalyst@pw.live', name: 'New Analyst' } });
+t.eq('CBA saveAnalyst (create) -> ok:true', addAn.ok, true);
+t.eq('CBA saveAnalyst reports created', addAn.data && addAn.data.created, true);
+t.ok('new analyst joins the CBA cluster', call('clusterAnalysts', cbaToken, {}).data.some((a) => a.email === 'newanalyst@pw.live' && a.clusterId === clusterId));
+
+const rmAn = call('removeAnalyst', cbaToken, { email: 'newanalyst@pw.live' });
+t.eq('CBA removeAnalyst -> ok:true', rmAn.ok, true);
+t.ok('removed analyst goes INACTIVE', call('clusterAnalysts', cbaToken, {}).data.some((a) => a.email === 'newanalyst@pw.live' && a.status === 'INACTIVE'));
+
+// a second cluster, so we can prove CBA cannot reach across clusters
+const mkCluster2 = call('adminSaveCluster', adminToken, { cluster: { name: 'Marketing Analytics', cbaEmail: 'cba2@pw.live' } });
+const cluster2 = mkCluster2.data && mkCluster2.data.clusterId;
+call('adminSaveUser', adminToken, { user: { email: 'sneha@pw.live', name: 'Sneha', role: 'ANALYST', clusterId: cluster2 } });
+const crossSave = call('saveAnalyst', cbaToken, { analyst: { email: 'sneha@pw.live', name: 'x' } });
+t.eq('CBA cannot edit another cluster analyst -> ok:false', crossSave.ok, false);
+const crossRemove = call('removeAnalyst', cbaToken, { email: 'sneha@pw.live' });
+t.eq('CBA cannot remove another cluster analyst -> ok:false', crossRemove.ok, false);
+
+/* --------------------------- admin cross-cluster assign -------------- */
+t.section('admin cross-cluster assign');
+const adminAnalysts = call('myAnalysts', adminToken, {});
+t.ok('admin myAnalysts spans clusters', Array.isArray(adminAnalysts.data)
+  && adminAnalysts.data.some((a) => a.clusterId === clusterId)
+  && adminAnalysts.data.some((a) => a.clusterId === cluster2));
+const adminTicket = call('createTicket', adminToken, { title: 'Admin dispatch', description: 'x', priority: 'Medium' });
+const adminAssign = call('assignTicket', adminToken, { ticketId: adminTicket.data.ticketId, analystEmail: 'sneha@pw.live' });
+t.eq('admin can assign across clusters -> ok:true', adminAssign.ok, true);
+t.eq('admin cross-cluster assign sets analyst', adminAssign.data && adminAssign.data.analystEmail, 'sneha@pw.live');
+t.eq('admin cross-cluster assign -> ASSIGNED', adminAssign.data && adminAssign.data.status, 'ASSIGNED');
+
 /* --------------------------- transport layer ------------------------- */
 t.section('transport (doPost / doGet)');
 const viaPost = post({ api: 'getClusters', token: '', payload: {} });
