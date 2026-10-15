@@ -64,6 +64,10 @@ function seedDemo() {
     { email: 'karan@pw.live', name: 'Karan Mehta', role: 'USER', clusterId: ids[1] },
   ];
   users.forEach((u) => ctx.Admin.saveUser(admin, { user: u }));
+  // Provisioning the demo org is not the admin's personal activity, so drop the
+  // USER_CREATED / CLUSTER_CREATED rows the seed just wrote. Otherwise the
+  // admin's "My Activity" shows events they never performed.
+  ctx.Db.deleteWhere(ctx.SHEETS.ACTIVITY, () => true);
   return { clusters: ids.length, users: users.length };
 }
 
