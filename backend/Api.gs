@@ -41,6 +41,7 @@ var PRIVATE_API = {
   reopenTicket:     { fn: function (u, p) { return Tickets.reopen(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
   rateTicket:       { fn: function (u, p) { return Tickets.rate(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
   myAnalysts:       { fn: function (u) { return Tickets.myAnalysts(u); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
+  myActivity:       { fn: function (u, p) { return Admin.myActivity(u, p); }, roles: ['USER', 'CBA', 'ANALYST', 'ADMIN'] },
 
   requestApproval:  { fn: function (u, p) { return Approvals.request(u, p); }, roles: ['CBA', 'ADMIN'] },
   requestReassign:  { fn: function (u, p) { return Reassign.request(u, p); }, roles: ['ANALYST'] },

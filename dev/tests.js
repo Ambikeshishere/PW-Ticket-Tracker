@@ -277,6 +277,19 @@ module.exports = function runTests(ctx, t) {
   ok('CSV export has header + rows', csv.csv.split('\n').length >= 2);
   ok('CSV filename', csv.filename === 'tickets.csv');
 
+  /* ===================== my activity (any role) ===================== */
+  section('My activity');
+  const mine = ctx.Admin.myActivity(admin, { days: 365 });
+  ok('myActivity returns the caller email', mine.email === 'ambikesh.srivastava@pw.live');
+  ok('myActivity has a today key', /^\d{4}-\d{2}-\d{2}$/.test(mine.today));
+  ok('myActivity buckets by day', typeof mine.days === 'object' && mine.days[mine.today] >= 1);
+  ok('myActivity counts events', mine.total >= 1 && Object.keys(mine.byEvent).length >= 1);
+  ok('myActivity has streaks', typeof mine.streak.current === 'number' && typeof mine.streak.longest === 'number');
+  ok('myActivity lists recent events', Array.isArray(mine.recent) && mine.recent.length >= 1);
+  // A different user must not see the admin's rows.
+  const other = ctx.Admin.myActivity({ Email: 'nobody@pw.live', Name: 'Nobody', Role: 'USER' }, { days: 365 });
+  eq('myActivity is scoped to the caller', other.total, 0);
+
   /* ===================== shared raw cache ===================== */
   section('Shared raw cache');
   // Simulate a fresh execution: drop per-execution state, keep the shared cache.

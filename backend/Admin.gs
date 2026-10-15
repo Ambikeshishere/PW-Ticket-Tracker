@@ -323,6 +323,59 @@ var Admin = {
     return { range: range, users: Admin.rankActivity_(events, Db.all(SHEETS.USERS)) };
   },
 
+  /**
+   * The signed-in user's own activity, bucketed by day for a contribution
+   * calendar. Any role may call it — it only ever reads the caller's rows.
+   */
+  myActivity: function (user, p) {
+    var days = Math.min(Number((p && p.days) || 365), 400);
+    var email = normEmail(user.Email);
+    var from = Date.now() - days * 86400000;
+    var events = Db.find(SHEETS.ACTIVITY, function (a) {
+      return normEmail(a.Email) === email && toMs(a.Timestamp) >= from;
+    });
+
+    var byDay = {}, byEvent = {};
+    events.forEach(function (a) {
+      var k = dayKey(a.Timestamp);
+      if (k) byDay[k] = (byDay[k] || 0) + 1;
+      var ev = String(a.Event || '').toUpperCase();
+      byEvent[ev] = (byEvent[ev] || 0) + 1;
+    });
+
+    var recent = events.slice()
+      .sort(function (a, b) { return toMs(b.Timestamp) - toMs(a.Timestamp); })
+      .slice(0, 25)
+      .map(function (a) {
+        return { at: a.Timestamp, event: String(a.Event || '').toUpperCase(), meta: a.Meta || '' };
+      });
+
+    // Longest run of consecutive active days.
+    var keys = Object.keys(byDay).sort();
+    var longest = 0, run = 0, prev = null;
+    keys.forEach(function (k) {
+      run = (prev && (toMs(k) - toMs(prev)) === 86400000) ? run + 1 : 1;
+      if (run > longest) longest = run;
+      prev = k;
+    });
+
+    // Current streak: walk back from today (today may still be empty).
+    var cur = 0, d = new Date();
+    if (!byDay[dayKey(d)]) d = new Date(d.getTime() - 86400000);
+    while (byDay[dayKey(d)]) { cur++; d = new Date(d.getTime() - 86400000); }
+
+    return {
+      email: email, name: user.Name || '', role: String(user.Role || '').toUpperCase(),
+      today: dayKey(now()),
+      total: events.length,
+      activeDays: keys.length,
+      days: byDay,
+      byEvent: byEvent,
+      recent: recent,
+      streak: { current: cur, longest: longest }
+    };
+  },
+
   /** Ops diagnostic: recent outbound mail + whether the drain trigger is live. */
   mailQueue: function (user, p) {
     var limit = Math.min(Number((p && p.limit) || 20), 100);

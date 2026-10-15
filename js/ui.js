@@ -50,7 +50,7 @@
     me: 1, getClusters: 1, dashboard: 1, listTickets: 1, getTicket: 1,
     myAnalysts: 1, listReassign: 1, teamWorkload: 1, clusterAnalysts: 1,
     adminUsers: 1, adminClusters: 1, adminAnalytics: 1, adminActivity: 1,
-    adminMailQueue: 1, adminExportCsv: 1
+    adminMailQueue: 1, adminExportCsv: 1, myActivity: 1
   };
   var READ_TTL = 30000;
   var _cache = {}, _inflight = {};
@@ -97,6 +97,25 @@
   /* ------------------------------ theme ------------------------------ */
   function applyTheme(t) { document.documentElement.setAttribute('data-theme', t); try { localStorage.setItem('pw_theme', t); } catch (e) {} }
   function toggleTheme() { applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); }
+
+  /* ------------------------------ clock ------------------------------ */
+  var _clockTimer = null;
+  function tickClock() {
+    var n = new Date();
+    var pad = function (x) { return String(x).padStart(2, '0'); };
+    var time = pad(n.getHours()) + ':' + pad(n.getMinutes()) + ':' + pad(n.getSeconds());
+    var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var date = days[n.getDay()] + ', ' + n.getDate() + ' ' + months[n.getMonth()] + ' ' + n.getFullYear();
+    var t = $('liveClock'); if (t) t.textContent = time;
+    var dd = $('liveDate'); if (dd) dd.textContent = date;
+    var tb = $('topClock'); if (tb) tb.textContent = time;
+  }
+  function startClock() {
+    tickClock();
+    if (_clockTimer) return;
+    _clockTimer = setInterval(tickClock, 1000);
+  }
 
   /* --------------------------- approval url -------------------------- */
   function approvalFromUrl() {
@@ -228,6 +247,7 @@
     renderNav();
     setView('dashboard');
     prefetch();
+    startClock();
     if (state.pendingTicket) {
       var id = state.pendingTicket;
       state.pendingTicket = null;
@@ -239,6 +259,7 @@
   function navItems() {
     var r = state.user.role;
     var items = [{ id: 'dashboard', label: 'Dashboard', icon: '▦' }];
+    items.push({ id: 'myactivity', label: 'My Activity', icon: '📅' });
     if (r === 'USER') items.push({ id: 'tickets', label: 'My Tickets', icon: '🗂' });
     if (r === 'ANALYST') items.push({ id: 'tickets', label: 'Assigned to me', icon: '🗂' });
     if (r === 'CBA') items.push({ id: 'tickets', label: 'Cluster Tickets', icon: '🗂' });
@@ -278,7 +299,7 @@
       dashboard: renderDashboard, tickets: renderTickets, new: renderNewTicket,
       approvals: renderApprovals, reassign: renderReassign, workload: renderWorkload,
       users: renderUsers, clusters: renderClusters, activity: renderActivity,
-      analytics: renderAnalytics, analysts: renderAnalysts
+      analytics: renderAnalytics, analysts: renderAnalysts, myactivity: renderMyActivity
     };
     (map[v] || function () { $('content').innerHTML = '<div class="empty">Unknown view</div>'; })();
     // The dashboard view already fetches the counts the badge needs, so only
@@ -706,6 +727,89 @@
         '<div class="card"><div class="table-wrap"><table class="tbl"><thead><tr>' +
           '<th>User</th><th>Role</th><th>Logins</th><th>Actions</th><th>Tickets</th><th>Comments</th><th>Last active</th><th>Events</th>' +
         '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    }).catch(function (e) { $('content').innerHTML = '<div class="empty">' + h(e.message) + '</div>'; });
+  }
+
+  /* -------------------------- my activity ---------------------------- */
+  function ymd(d) {
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+  function heatLevel(c, max) {
+    if (!c) return 0;
+    if (max <= 4) return Math.min(c, 4);
+    var r = c / max;
+    return r <= 0.25 ? 1 : r <= 0.5 ? 2 : r <= 0.75 ? 3 : 4;
+  }
+  function renderHeatmap(byDay, todayKey) {
+    var end = new Date(); end.setHours(0, 0, 0, 0);
+    var start = new Date(end.getTime() - 364 * 86400000);
+    start = new Date(start.getTime() - start.getDay() * 86400000);   // back to Sunday
+    var max = 0;
+    Object.keys(byDay).forEach(function (k) { if (byDay[k] > max) max = byDay[k]; });
+
+    var cols = [], labels = [], d = new Date(start), lastMonth = -1;
+    while (d <= end) {
+      var col = [], firstMonth = d.getMonth();
+      for (var i = 0; i < 7; i++) {
+        var key = ymd(d), c = byDay[key] || 0;
+        col.push({ key: key, count: c, future: d > end, today: key === todayKey });
+        d = new Date(d.getTime() + 86400000);
+      }
+      cols.push(col);
+      labels.push(firstMonth !== lastMonth ? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][firstMonth] : '');
+      lastMonth = firstMonth;
+    }
+
+    var months = labels.map(function (l) { return '<span>' + (l || '') + '</span>'; }).join('');
+    var grid = cols.map(function (col) {
+      return '<div class="heatmap-col">' + col.map(function (cell) {
+        var cls = 'heatmap-cell l' + heatLevel(cell.count, max) +
+          (cell.today ? ' today' : '') + (cell.future ? ' future' : '');
+        var title = cell.key + ' — ' + cell.count + ' action' + (cell.count === 1 ? '' : 's');
+        return '<div class="' + cls + '" title="' + h(title) + '"></div>';
+      }).join('') + '</div>';
+    }).join('');
+
+    return '<div class="heatmap-wrap">' +
+      '<div class="heatmap-months">' + months + '</div>' +
+      '<div class="heatmap-grid">' + grid + '</div>' +
+      '<div class="heatmap-legend">Less' +
+        '<span class="heatmap-cell l0"></span><span class="heatmap-cell l1"></span>' +
+        '<span class="heatmap-cell l2"></span><span class="heatmap-cell l3"></span>' +
+        '<span class="heatmap-cell l4"></span>More</div>' +
+    '</div>';
+  }
+  function renderMyActivity() {
+    call('myActivity', { days: 365 }).then(function (d) {
+      var evRows = Object.keys(d.byEvent).sort(function (a, b) { return d.byEvent[b] - d.byEvent[a]; })
+        .map(function (k) { return '<div class="inline" style="justify-content:space-between"><span class="pill">' + h(k.replace(/_/g, ' ')) + '</span><b>' + d.byEvent[k] + '</b></div>'; })
+        .join('') || '<p class="muted">No activity yet.</p>';
+      var recent = d.recent.map(function (r) {
+        return '<li><div class="tl-top"><span class="tl-what">' + h(r.event.replace(/_/g, ' ')) + '</span>' +
+          '<span class="tl-when">' + fmt(r.at) + '</span></div>' +
+          (r.meta ? '<div class="tl-det">' + h(r.meta) + '</div>' : '') + '</li>';
+      }).join('') || '<li class="muted">Nothing yet — raise a ticket or comment to get started.</li>';
+
+      $('content').innerHTML =
+        '<div class="page-head"><h2>My Activity</h2><span class="pill">' + h(d.role) + '</span></div>' +
+        '<div class="clock-card">' +
+          '<div class="clock-time" id="liveClock">--:--:--</div>' +
+          '<div class="clock-date" id="liveDate"></div>' +
+        '</div>' +
+        '<div class="stats">' +
+          '<div class="stat"><div class="num">' + d.total + '</div><div class="lbl">Actions (1 year)</div></div>' +
+          '<div class="stat"><div class="num">' + d.activeDays + '</div><div class="lbl">Active days</div></div>' +
+          '<div class="stat"><div class="num">' + d.streak.current + '</div><div class="lbl">Current streak</div></div>' +
+          '<div class="stat"><div class="num">' + d.streak.longest + '</div><div class="lbl">Longest streak</div></div>' +
+        '</div>' +
+        '<div class="section"><h4>Contribution calendar</h4>' + renderHeatmap(d.days, d.today) + '</div>' +
+        '<div class="grid2">' +
+          '<div class="section"><h4>By event</h4><div class="stack">' + evRows + '</div></div>' +
+          '<div class="section"><h4>Recent activity</h4><ul class="timeline">' + recent + '</ul></div>' +
+        '</div>';
+
+      startClock();
     }).catch(function (e) { $('content').innerHTML = '<div class="empty">' + h(e.message) + '</div>'; });
   }
 
