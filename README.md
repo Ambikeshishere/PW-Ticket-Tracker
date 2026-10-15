@@ -423,6 +423,15 @@ avoid that:
 - **One read per tab per request.** `Db._raw()` caches each tab's header row + values
   and rebuilds fresh row objects from it, so repeated reads within a request are free.
   The cache is dropped on every write (`Db._invalidate`).
+- **Shared read cache across requests.** Opening the spreadsheet costs ~1–2s, so
+  `Db._raw()` also keeps each tab in `CacheService` (`raw:<tab>:<version>`, chunked at
+  90KB, 5-minute TTL). A per-tab version marker is bumped on every write, so a write
+  makes the old entries unreachable — reads are always fresh, but a warm request skips
+  the spreadsheet open entirely. Disable with `RAW_CACHE_ENABLED = false` (Config.gs).
+- **Client response cache.** `js/ui.js` caches read responses for 30s (with in-flight
+  de-duplication) and prefetches the common views after login, so revisiting a view is
+  instant instead of a ~2.4s spinner. Any write clears the cache, so the next read is
+  fresh.
 - **Batched writes.** `Db.update()` writes a single field with one `setValue()`, and a
   multi-field patch with one read + one `setValues()` — instead of one `setValue()`
   per field.
