@@ -137,6 +137,26 @@
     return q.get('ticket') || null;
   }
 
+  /* ---------------------- session persistence ------------------------ */
+  /* The profile is cached next to the token so a reload paints the app
+   * immediately instead of blocking on a `me` round-trip (Apps Script costs
+   * ~2-3s per call). `me` is refreshed in the background; the session is
+   * dropped if it turns out to have expired. */
+  function storeUser(u) { try { localStorage.setItem('pw_user', JSON.stringify(u)); } catch (e) {} }
+  function readStoredUser() {
+    try {
+      var s = localStorage.getItem('pw_user');
+      if (!s) return null;
+      var u = JSON.parse(s);
+      return (u && u.role) ? u : null;
+    } catch (e) { return null; }
+  }
+  function clearSession() {
+    try { localStorage.removeItem('pw_token'); localStorage.removeItem('pw_user'); } catch (e) {}
+    clearCache();
+    state.token = null; state.user = null;
+  }
+
   /* ------------------------------ boot ------------------------------- */
   function boot() {
     try { applyTheme(localStorage.getItem('pw_theme') || 'light'); } catch (e) { applyTheme('light'); }
@@ -148,15 +168,32 @@
     state.pendingTicket = ticketFromUrl();
 
     var t = localStorage.getItem('pw_token');
-    if (t) {
-      API.call('me', t, {}).then(function (me) {
-        if (me.ok) { state.token = t; state.user = me.data; enterApp(); }
-        else { localStorage.removeItem('pw_token'); showAuth(); wireAuth(); }
-      });
+    if (!t) { showAuth(); wireAuth(); return; }
+
+    state.token = t;
+    var cached = readStoredUser();
+    if (cached) {
+      state.user = cached;
+      enterApp();              // instant paint from the cached profile
+      refreshMe(t);            // verify + refresh in the background
       return;
     }
-    showAuth();
-    wireAuth();
+    API.call('me', t, {}).then(function (me) {
+      if (me.ok) { state.user = me.data; storeUser(me.data); enterApp(); }
+      else { clearSession(); showAuth(); wireAuth(); }
+    }, function () { clearSession(); showAuth(); wireAuth(); });
+  }
+
+  /* Confirms the cached profile against the server and re-renders if it changed. */
+  function refreshMe(t) {
+    API.call('me', t, {}).then(function (me) {
+      if (!me.ok) { clearSession(); showAuth(); wireAuth(); return; }
+      var prev = state.user || {};
+      var changed = prev.role !== me.data.role || prev.name !== me.data.name;
+      state.user = me.data;
+      storeUser(me.data);
+      if (changed) { $('userChip').textContent = state.user.name + ' · ' + state.user.role; renderNav(); }
+    }, function () { /* transient network error: keep the cached session */ });
   }
 
   function showAuth() {
@@ -208,6 +245,7 @@
     call('verifyOtp', { email: email, code: code }).then(function (d) {
       state.token = d.token; state.user = d.user;
       localStorage.setItem('pw_token', d.token);
+      storeUser(d.user);
       enterApp();
     }).catch(function (e) { toast(e.message, 'err'); })
       .then(function () { b.disabled = false; b.textContent = 'Verify & Sign in'; });
@@ -230,9 +268,7 @@
   }
   function doLogout(silent) {
     if (!silent && state.token) { try { API.call('logout', state.token, { token: state.token }); } catch (e) {} }
-    clearCache();
-    localStorage.removeItem('pw_token');
-    state.token = null; state.user = null;
+    clearSession();
     location.hash = '';
     location.reload();
   }

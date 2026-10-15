@@ -18,7 +18,8 @@ var Db = {
    * ~1-2s, so each tab's header+values are kept in CacheService and only
    * re-read after a write. A per-tab version marker is bumped on every write,
    * which makes the old entries unreachable (they expire on their own). */
-  _RAW_TTL: 300,      // seconds a cached tab lives
+  _RAW_TTL: 3600,     // seconds a cached tab lives (writes bump the version, so
+                      // a longer TTL only survives idle periods, never staleness)
   _VER_TTL: 21600,    // seconds a version marker lives (must exceed _RAW_TTL)
   _CHUNK: 90000,      // chars per cache key (CacheService caps a value at 100KB)
   _MAX_CACHE: 900000, // skip caching a tab bigger than this (keeps key count sane)
